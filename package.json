@@ -1,0 +1,24 @@
+{
+  "name": "scorva-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Scorva AI-Assisted Hackathon Evaluation SaaS Platform",
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "start:web": "npm --prefix apps/web run start",
+    "lint:web": "npm --prefix apps/web run lint",
+    "test:web": "npm --prefix apps/web test",
+    "dev:api": "uvicorn apps.api.main:app --reload --port 8000",
+    "test:api": "pytest apps/api",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0b1020;
+  --surface: #111827;
+  --surface-elevated: #1f2937;
+  --surface-border: #374151;
+  --primary: #3b82f6;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+}
+
+body {
+  color: var(--text-primary);
+  background: var(--background);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom subtle scrollbar for dark UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0b1020;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1f2937;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #374151;
+}
+
+/* Focus styles for keyboard accessibility (WCAG AA) */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}

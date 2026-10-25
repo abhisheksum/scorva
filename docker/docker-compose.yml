@@ -1,0 +1,116 @@
+services:
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: scorva-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_APP_ENV=development
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - scorva-network
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: scorva-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - SCORVA_ENV=development
+      - DEBUG=true
+      - PORT=8000
+      - HOST=0.0.0.0
+      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
+      - DATABASE_URL=postgresql+asyncpg://scorva:scorva_dev_password@postgres:5432/scorva
+      - REDIS_URL=redis://redis:6379/0
+      - S3_ENDPOINT_URL=http://minio:9000
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - scorva-network
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: scorva-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=scorva
+      - POSTGRES_PASSWORD=scorva_dev_password
+      - POSTGRES_DB=scorva
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scorva -d scorva"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scorva-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: scorva-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - scorva-network
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: scorva-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    networks:
+      - scorva-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: scorva-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollamadata:/root/.ollama
+    networks:
+      - scorva-network
+
+networks:
+  scorva-network:
+    driver: bridge
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  ollamadata:
