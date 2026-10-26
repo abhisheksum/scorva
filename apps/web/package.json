@@ -8,7 +8,7 @@
     "start": "next start -p 3000",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "npm run typecheck"
+    "test": "node --test tests/*.test.mjs && npm run typecheck"
   },
   "dependencies": {
     "clsx": "^2.1.1",

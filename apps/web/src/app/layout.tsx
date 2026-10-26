@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
   title: 'Scorva — AI-Assisted Hackathon Evaluation',
@@ -21,7 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark h-full">
       <body className="h-full bg-background text-text-primary antialiased selection:bg-primary/30 selection:text-white">
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

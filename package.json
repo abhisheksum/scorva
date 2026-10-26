@@ -4,6 +4,10 @@
   "private": true,
   "description": "Scorva AI-Assisted Hackathon Evaluation SaaS Platform",
   "scripts": {
+    "start": "./start.sh",
+    "stop": "./stop.sh",
+    "status": "./status.sh",
+    "logs": "./scripts/logs.sh",
     "dev:web": "npm --prefix apps/web run dev",
     "build:web": "npm --prefix apps/web run build",
     "start:web": "npm --prefix apps/web run start",
@@ -11,9 +15,9 @@
     "test:web": "npm --prefix apps/web test",
     "dev:api": "uvicorn apps.api.main:app --reload --port 8000",
     "test:api": "pytest apps/api",
-    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
-    "docker:down": "docker compose -f docker/docker-compose.yml down",
-    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f"
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "workspaces": [
     "apps/web"

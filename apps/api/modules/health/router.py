@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
 import time
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from apps.api.config import settings
+from apps.api.core.database import check_database_connection
 from apps.api.modules.health.schemas import (
     HealthResponse,
+    HealthStatus,
     LivenessResponse,
     ServiceCheck,
 )
@@ -12,12 +14,16 @@ router = APIRouter(prefix="/health", tags=["System Health"])
 
 
 @router.get("", response_model=HealthResponse, summary="Service health status")
-async def get_health() -> HealthResponse:
+async def get_health(response: Response = None) -> HealthResponse:
     """Returns general platform health and dependency readiness."""
     start_time = time.perf_counter()
 
-    # Core API internal check
+    # Core API internal latency
     api_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
+    # Live bounded database check
+    db_healthy, db_latency, db_detail = await check_database_connection(timeout_seconds=2.0)
+    db_status: HealthStatus = "healthy" if db_healthy else "unhealthy"
 
     services = {
         "api": ServiceCheck(
@@ -26,22 +32,27 @@ async def get_health() -> HealthResponse:
             details="FastAPI core service responsive",
         ),
         "database": ServiceCheck(
-            status="healthy" if settings.SCORVA_ENV == "test" else "unknown",
-            details="Database driver configured (connection pool verification active in Phase 2)",
+            status=db_status,
+            latency_ms=db_latency,
+            details=db_detail,
         ),
         "redis": ServiceCheck(
-            status="healthy" if settings.SCORVA_ENV == "test" else "unknown",
-            details="Redis broker configured (session store integration active in Phase 2)",
+            status="unknown",
+            details="Redis session store integration active in Phase 2",
         ),
         "ollama": ServiceCheck(
             status="unknown",
-            details="Ollama client configured (inference pipeline active in Phase 4)",
+            details="Ollama client inference pipeline active in Phase 4",
         ),
     }
 
-    # In Phase 1, overall status is healthy since API foundation is operational
+    # If database is down, platform status is unhealthy
+    platform_status: HealthStatus = "healthy" if db_healthy else "unhealthy"
+    if response and platform_status == "unhealthy":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
     return HealthResponse(
-        status="healthy",
+        status=platform_status,
         app_name="Scorva API",
         environment=settings.SCORVA_ENV,
         version="0.1.0",
@@ -60,6 +71,6 @@ async def get_liveness() -> LivenessResponse:
 
 
 @router.get("/ready", response_model=HealthResponse, summary="Kubernetes readiness probe")
-async def get_readiness() -> HealthResponse:
+async def get_readiness(response: Response) -> HealthResponse:
     """Readiness probe verifying operational state."""
-    return await get_health()
+    return await get_health(response=response)

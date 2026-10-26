@@ -1,9 +1,9 @@
 import React from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Info, HelpCircle } from 'lucide-react';
-import { HealthStatus } from '@/types/api';
+import { CheckCircle2, AlertTriangle, XCircle, Info, HelpCircle, FileEdit, Globe } from 'lucide-react';
+import { HealthStatus, HackathonStatus, OrganizationStatus } from '@/types/api';
 
 interface StatusBadgeProps {
-  status: HealthStatus | 'active' | 'pending' | 'suspended' | 'archived' | 'running' | 'completed' | 'failed' | 'queued' | 'cancelled';
+  status: HealthStatus | OrganizationStatus | HackathonStatus | 'pending' | 'running' | 'failed' | 'queued' | 'cancelled' | string;
   label?: string;
   className?: string;
   size?: 'sm' | 'md';
@@ -26,6 +26,14 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({
     case 'completed':
       badgeColor = 'bg-status-success/10 text-status-success border-status-success/30';
       Icon = CheckCircle2;
+      break;
+    case 'published':
+      badgeColor = 'bg-primary/10 text-primary border-primary/30';
+      Icon = Globe;
+      break;
+    case 'draft':
+      badgeColor = 'bg-slate-800/80 text-slate-300 border-slate-700';
+      Icon = FileEdit;
       break;
     case 'degraded':
     case 'pending':

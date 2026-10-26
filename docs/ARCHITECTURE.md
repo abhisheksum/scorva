@@ -1227,37 +1227,48 @@ scorva/
 
 ## 15. Implementation Phases, Dependencies, and Acceptance Criteria
 
-### Phase 1 — Project Foundation (Scaffold Verified)
-- **Status:** **Scaffold Verified**
-- **Verified Scope:** Next.js 15 application shell, dark design tokens, responsive sidebar/header, routing placeholders (`apps/web`). FastAPI backend factory with lifespan, CORS, correlation middleware, and `/api/v1/health` probes (`apps/api`). Docker Compose configuration. Automated pytest unit tests (7 passed) and Next.js build verification passed.
-- **Explicit Exclusions:** Database tables, Alembic migrations, Redis stateful sessions, Celery workers, and Ollama models are NOT in Phase 1 (staged for subsequent phases).
+### Phase 1 — Project Foundation (Completed & Verified)
+- **Status:** **Completed & Verified**
+- **Verified Scope:** Next.js 15 application shell, dark design tokens, responsive sidebar/header, routing placeholders (`apps/web`). FastAPI backend factory with lifespan, CORS, correlation middleware, RFC 7807/RFC 9457 Problem Details error handling, async PostgreSQL connection pool (`apps/api/core/database.py`), Alembic migration framework initialized (`alembic/`), and `/api/v1/health` probes reporting live PostgreSQL latency. Docker Compose configuration. Automated pytest test suite (11 passed), Next.js production build verification (16/16 routes pre-rendered), and live curl validation against running PostgreSQL container passed.
+- **Explicit Exclusions:** Domain entity tables, Redis stateful sessions, Celery workers, and Ollama models are NOT in Phase 1 (staged for subsequent phases).
 
-### Phase 2 — Authentication, Sessions, Mandatory MFA, & Dual-Plane RBAC (P0)
-- **Status:** **Planned**
+### Phase 2 — Authentication, Sessions, Mandatory MFA, & Dual-Plane RBAC (Completed & Security Verified)
+- **Status:** **Completed & Security Verified**
 - **Dependencies:** Phase 1.
-- **Scope:** PostgreSQL schema migration for `users`, `user_sessions`, and `audit_events`. Redis stateful session store using SHA-256 token hashing. Mandatory TOTP MFA enrollment and AES-256-GCM secret encryption. Append-only database trigger on `audit_events`.
+- **Scope:** PostgreSQL schema migration for `users`, `user_sessions`, and `audit_events`. Redis stateful session store using SHA-256 token hashing with multi-worker PostgreSQL fallback tables (`rate_limit_buckets`, `totp_replay_prevention`, `mfa_pending_tokens`). Mandatory TOTP MFA enrollment and AES-256-GCM secret encryption. Append-only database trigger on `audit_events`. Production security startup guards and proxy header IP extraction.
 - **Acceptance Criteria:**
   - Administrative accounts without MFA are redirected to mandatory enrollment before accessing `/admin/*`.
-  - Modifying a user's role or suspending an account immediately invalidates their active sessions in Redis and PostgreSQL.
+  - Modifying a user's role or suspending an account immediately invalidates active sessions in Redis and PostgreSQL.
   - SQL `UPDATE` or `DELETE` on `audit_events` raises a database exception.
+  - 57 backend automated tests passing with zero failures.
 
-### Phase 3 — Tenant Scoping, Organizations, Users, & Hackathons Oversight (P0)
-- **Status:** **Planned**
+### Phase 3 — Core Administration & Tenant Isolation (Completed & Verified)
+- **Status:** **Completed & Verified**
 - **Dependencies:** Phase 2.
-- **Scope:** PostgreSQL schema migration for `organizations`, `organization_memberships`, `hackathons`, `teams`, `submissions`, and `rubrics`. Composite foreign key scoping. Multi-tenant directory pagination and suspension workflows.
-- **Acceptance Criteria:**
-  - Automated integration tests confirm cross-tenant access attempts return `403 Forbidden`.
-  - Organization suspension halts active hackathons and team submissions.
-  - Every submission locks its immutable `frozen_commit_sha`.
+- **Scope:**
+  - Milestone 1: Foundational database schema, models, enums, constraints, and migration `de1a35a5cc94`.
+  - Milestone 2: Server-side tenant isolation (`get_tenant_context`), dual-plane RBAC, organization administration APIs.
+  - Milestone 3: Hackathon lifecycle management APIs, timeline constraints, administrative overrides.
+  - Milestone 4: Next.js Super Admin UI integration for `/admin/organizations` and `/admin/hackathons`, tenant workspace portal, and targeted verification fixes (removal of unsupported tenant roles, render-phase state clearing against navigation race conditions, honest audit 403 access-denied display).
+- **Verification:** 125/125 backend tests passing, 7 frontend unit & race tests passing, 0 TypeScript errors, clean production build.
 
-### Phase 4 — Asynchronous AI Evaluation Engine & Sandbox Processing (P0)
-- **Status:** **Planned**
-- **Dependencies:** Phase 3.
-- **Scope:** Celery worker pool with Redis broker. MinIO S3 bucket configuration. Safe tarball extraction sandbox (zero code execution, path containment validation, resource limits). Ollama provider abstraction with structured JSON grammar. 7-stage deterministic evaluation pipeline.
-- **Acceptance Criteria:**
-  - Decompression bombs or malicious paths (`../`) in repository tarballs are blocked and recorded as security events.
-  - Evaluated scores are computed deterministically using non-zero minimum normalization.
-  - Partial unique index enforces exactly one active evaluation result per submission.
+### Phase 4 — AI-Powered Hackathon Evaluation Engine (Planned)
+- **Status:** **Planning Complete — Ready for Milestone 1 Implementation**
+- **Detailed Planning Documents:**
+  - Configuration & Permissions Catalog: [`docs/CONFIGURATION_AND_PERMISSIONS_CATALOG.md`](file:///home/shubh/scorva/docs/CONFIGURATION_AND_PERMISSIONS_CATALOG.md)
+  - Plan & Milestones: [`docs/PHASE_4_PLAN.md`](file:///home/shubh/scorva/docs/PHASE_4_PLAN.md)
+  - Technical Architecture: [`docs/PHASE_4_ARCHITECTURE.md`](file:///home/shubh/scorva/docs/PHASE_4_ARCHITECTURE.md)
+  - Security Threat Model: [`docs/PHASE_4_SECURITY_THREAT_MODEL.md`](file:///home/shubh/scorva/docs/PHASE_4_SECURITY_THREAT_MODEL.md)
+  - Quality & Test Plan: [`docs/PHASE_4_TEST_PLAN.md`](file:///home/shubh/scorva/docs/PHASE_4_TEST_PLAN.md)
+  - Architecture Decision Records: [`docs/PHASE_4_DECISIONS.md`](file:///home/shubh/scorva/docs/PHASE_4_DECISIONS.md)
+- **Scope Summary (7-Milestone Roadmap):**
+  - Milestone 1: Centralized Configuration & Dynamic RBAC Foundation (Schema Subsystems A & B: 9 durable tables including `authz_policy_versions` and transactional `authz_invalidation_outbox` branching from verified head `de1a35a5cc94`, typed Pydantic models with two-phase limit validation, dual-path resolution, bounded cache invalidation with monotonic version check, and serialized last platform owner lockout protection).
+  - Milestone 2: Domain Evaluation Data Foundation & Scoring Arithmetic (Schema Subsystem C: 15 tables including participant teams, Alembic migration `0004_phase4_evaluation_schema`, deterministic `Decimal` calculator, rubric versioning).
+  - Milestone 3: Safe GitHub Repository Ingestion & Multi-Tenant Credential Store (SSRF Profile A, streaming extraction quota guards, AST tree classification, AES-256-GCM tokens).
+  - Milestone 4: Provider-Neutral AI Engine & Structured Output Validation (SSRF Profile B, Ollama/Mock adapters, structural XML fencing, JSON Schema enforcement, prompt injection defense).
+  - Milestone 5: Celery Evaluation Orchestrator, Worker Leases & Fault Tolerance (renewable Redis leases, CAS fencing tokens, crash reaper).
+  - Milestone 6: Tenant & Participant Lifecycle APIs, Granular Authorization & Judge Overrides (Participant registration/team/submission routes with deadline enforcement, judge score adjustments with $\ge 20$ char justification, evaluation audit events).
+  - Milestone 7: Frontend Integration, Super Admin Dashboards & Judge Workspace (Next.js admin interfaces for Configuration `/admin/configuration`, Dynamic Roles `/admin/roles`, AI Operations `/admin/ai-operations`, and Judge Evaluation review).
 
 ### Phase 5 — Reliability Controls, Retries, Health Telemetry, & Settings (P0/P1)
 - **Status:** **Planned**

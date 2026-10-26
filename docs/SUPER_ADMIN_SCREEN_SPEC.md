@@ -260,8 +260,8 @@ The overview response should contain values, reporting windows, and freshness me
 
 # 5. Screen 02 — Organizations
 
-**Route:** `/admin/organizations`
-
+**Route:** `/admin/organizations`  
+**Status:** **Implemented & Verified (Phase 3 Milestone 4)**  
 **Purpose:** Manage organizations using Scorva to run hackathons.
 
 ## 5.1 Organization list
@@ -443,8 +443,8 @@ Do not expose password hashes, authentication secrets, session tokens, or privat
 
 # 7. Screen 04 — Hackathons
 
-**Route:** `/admin/hackathons`
-
+**Route:** `/admin/hackathons`  
+**Status:** **Implemented & Verified (Phase 3 Milestone 4)**  
 **Purpose:** Give platform administrators oversight of hackathons without replacing the Organizer dashboard.
 
 ## 7.1 Hackathon directory

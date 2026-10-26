@@ -77,7 +77,41 @@ Review `.env` and adjust database, Redis, or API port configurations if needed.
 
 ---
 
-### 2. Option A: Run with Docker Compose (Recommended)
+### 2. Option A: One-Command Start & Stop Scripts (Recommended)
+
+Start the entire platform (PostgreSQL, Redis, FastAPI backend, Next.js frontend):
+```bash
+./start.sh
+# or: npm start
+```
+
+Check real-time service health and status:
+```bash
+./status.sh
+# or: npm run status
+```
+
+Stream live application logs:
+```bash
+./scripts/logs.sh
+# or: npm run logs
+```
+
+Stop the platform and backing services cleanly:
+```bash
+./stop.sh
+# or: npm stop
+```
+
+Options:
+- `./start.sh -f`: Start services and follow live logs in foreground.
+- `./start.sh -d`: Start complete containerized stack via Docker Compose.
+- `./stop.sh -k`: Stop API and Web servers while keeping database containers running.
+- `./stop.sh -c`: Stop and tear down all Docker containers (`docker compose down`).
+
+---
+
+### 3. Option B: Run with Docker Compose Directly
 
 Start the entire platform stack (PostgreSQL, Redis, MinIO, Ollama, FastAPI Backend, and Next.js Web):
 
@@ -146,24 +180,64 @@ Open [http://localhost:3000/admin](http://localhost:3000/admin) in your browser.
 
 ### Backend Test Suite (pytest)
 
-Run the Python test suite verifying health endpoints, configuration loading, and error handling:
+Run the Python test suite verifying health endpoints, async PostgreSQL database connectivity, Alembic configuration, and RFC 7807 error handling:
 
 ```bash
-.venv/bin/pytest apps/api/tests
+.venv/bin/pytest apps/api/tests -v
 ```
 
-*Expected output: All test cases pass with status code 200/404 assertions verified.*
+*Expected output: All 11 test cases pass with status code 200/404/422 assertions verified.*
+
+### Database Migrations & Initial Admin Seeding
+
+#### 1. Apply Schema Migrations
+Alembic is configured for async SQLAlchemy migrations against PostgreSQL:
+```bash
+.venv/bin/alembic -c alembic.ini upgrade head
+```
+
+#### 2. Seed Initial Administrative Users
+Bootstrap development Super Admin accounts (creates password hashes with Argon2id and encrypted TOTP secrets with AES-256-GCM):
+```bash
+PYTHONPATH=. .venv/bin/python apps/api/scripts/seed_admin.py
+```
+
+**Pre-Configured Development Accounts:**
+| Account Email | Password | Platform Role | MFA State | TOTP Secret |
+|---|---|---|---|---|
+| `admin@scorva.io` | `Password123!` | `PLATFORM_OWNER` | Pending Enrollment | Generated on first login |
+| `owner@scorva.io` | `Password123!` | `PLATFORM_OWNER` | Enrolled | `JBSWY3DPEHPK3PXP` |
+| `security@scorva.io` | `Password123!` | `SECURITY_ADMIN` | Enrolled | `JBSWY3DPEHPK3PXP` |
+
+*Tip: For accounts with secret `JBSWY3DPEHPK3PXP`, you can generate current TOTP codes in Python with `pyotp.TOTP("JBSWY3DPEHPK3PXP").now()` or add the secret to your mobile authenticator app.*
+
+---
+
+## Running Automated Tests & Build Checks
+
+### Backend Test Suite (pytest)
+
+Run the complete 42-test suite covering authentication ceremonies, mandatory MFA, Argon2id hashing, TOTP replay protection, rate limiting, dual-barrier session validation (Redis + PostgreSQL fallback), role-based authorization guards, session invalidation triggers, and immutable audit triggers:
+
+```bash
+.venv/bin/pytest apps/api/tests -v
+```
+
+*Expected output: All 42 tests pass cleanly.*
+
+Verify database migration downgrade/upgrade cycles:
+```bash
+.venv/bin/pytest apps/api/tests/test_migrations.py -v
+```
 
 ### Frontend Typecheck & Build
 
 Run TypeScript type verification:
-
 ```bash
 npm run typecheck --prefix apps/web
 ```
 
 Run optimized production build verification:
-
 ```bash
 npm run build --prefix apps/web
 ```
@@ -172,21 +246,28 @@ npm run build --prefix apps/web
 
 ## Implementation Roadmap & Current Status
 
-- [x] **Phase 1: Project Foundation** (Current)
+- [x] **Phase 1: Project Foundation**
   - Monorepo directory structure established (`apps/web`, `apps/api`, `docker`).
   - Next.js 15+ frontend initialized with dark-first theme tokens (`#0B1020`, `#111827`, `#3B82F6`) and Lucide React icons.
   - Responsive Super Admin shell with persistent desktop sidebar and mobile off-canvas drawer.
   - FastAPI backend configured with CORS, correlation tracking, RFC 7807 exception handling, and `/api/v1/health` probes.
   - Frontend typed API client with timeout and structured error handling.
   - Docker Compose development environment configured for all dependencies.
-  - Automated tests and build checks verified.
 
-- [ ] **Phase 2: Authentication, Sessions, & Dual-Plane RBAC**
-  - Redis session store, TOTP MFA challenge, and Super Admin authorization guards.
-  - Append-only `audit_events` logging for privileged administrative mutations.
+- [x] **Phase 2: Authentication, Sessions, MFA, & Platform RBAC**
+  - **Argon2id Password Hashing:** Constant-time verification with dummy verify against email enumeration.
+  - **MFA Enforcement:** Mandatory TOTP for administrative roles; short-lived setup/challenge tokens with Redis replay prevention.
+  - **Cryptographic Encryption:** AES-256-GCM authenticated encryption for persisted TOTP secret seeds with environment-injected master key.
+  - **Dual-Barrier Session Validation:** 256-bit CSPRNG tokens (only SHA-256 stored server-side), fast-path Redis cache with TTL sliding, resilient PostgreSQL fallback on Redis outage.
+  - **Revocation & Invalidation:** Instant session revocation upon account suspension, role change, or explicit logout.
+  - **Security Controls:** Trusted reverse-proxy IP extraction (`ProxyHeadersMiddleware`), strict CSRF Origin/Referer verification on mutations (`CsrfOriginMiddleware`).
+  - **Append-Only Audit Trail:** `audit_events` table protected by PostgreSQL row-level trigger `trg_audit_events_immutable` preventing `UPDATE` and `DELETE`.
+  - **Frontend Integration:** Super Admin login screen (`/login`) with credential, MFA setup, and MFA challenge steps; active session profile and logout in header; interactive audit trail (`/admin/security`) and user session management (`/admin/users`).
+  - **Automated Verification:** 42 backend pytest tests and Next.js production build passing.
 
-- [ ] **Phase 3: Core Administration (Organizations, Users, Hackathons)**
+- [ ] **Phase 3: Core Administration (Organizations, Tenant Isolation, Hackathons)**
   - Multi-tenant directory pagination, organization suspension workflows, and hackathon commit tracking.
+  - Foreign key linking between `audit_events.organization_id` and `organizations.id`.
 
 - [ ] **Phase 4: Asynchronous AI Evaluation Engine & Worker Subsystem**
   - Celery worker pool, immutable Git tarball archiving, Ollama structured JSON schema scoring, and evidence verification.

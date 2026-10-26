@@ -1,0 +1,290 @@
+from datetime import datetime, timezone
+from typing import List, Optional
+import uuid
+from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from apps.api.core.database import get_db_session
+from apps.api.core.exceptions import AppException
+from apps.api.core.redis import delete_cached_session
+from apps.api.dependencies import get_current_user, require_security_admin, require_super_admin
+from apps.api.middleware.proxy_headers import get_client_ip
+from apps.api.modules.audit.models import AuditOutcome
+from apps.api.modules.audit.service import record_audit_event
+from apps.api.modules.auth.schemas import UserResponse
+from apps.api.modules.rbac.models import PLATFORM_SCOPE_ID
+from apps.api.modules.rbac.service import (
+    check_last_platform_owner_lockout,
+    increment_policy_version_and_outbox,
+)
+from apps.api.modules.users.models import PlatformRole, User, UserSession
+from apps.api.modules.users.schemas import UserRoleUpdateRequest, UserStatusUpdateRequest
+
+router = APIRouter(prefix="/admin/users", tags=["Admin User Management"])
+
+
+@router.get(
+    "",
+    response_model=List[UserResponse],
+    summary="List platform users (Super Admin or Security Admin)",
+)
+async def list_users(
+    db: AsyncSession = Depends(get_db_session),
+    admin_user: User = Depends(require_security_admin),
+) -> List[UserResponse]:
+    """Retrieves directory of platform users."""
+    stmt = select(User).where(User.deleted_at.is_(None)).order_by(User.created_at.desc())
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    return [
+        UserResponse(
+            id=str(u.id),
+            email=u.email,
+            full_name=u.full_name,
+            platform_role=u.platform_role.value if u.platform_role else None,
+            mfa_enabled=u.mfa_enabled,
+            is_active=u.is_active,
+        )
+        for u in users
+    ]
+
+
+@router.post(
+    "/{user_id}/status",
+    response_model=UserResponse,
+    summary="Suspend or activate user account",
+)
+async def update_user_status(
+    user_id: uuid.UUID,
+    req: UserStatusUpdateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    admin_user: User = Depends(require_super_admin),
+) -> UserResponse:
+    """
+    Suspends or activates a user account.
+    If suspending: transactionally revokes all active sessions in PostgreSQL,
+    sets users.sessions_revoked_at = NOW(), and appends an immutable audit event.
+    """
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    correlation_id = getattr(request.state, "correlation_id", uuid.uuid4())
+
+    stmt = select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise AppException(
+            code="USER_NOT_FOUND",
+            message="Target user not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Concurrency-safe lockout protection: cannot deactivate the last active Platform Owner
+    if not req.is_active:
+        await check_last_platform_owner_lockout(db, user_id)
+
+    now_utc = datetime.now(timezone.utc)
+    target_user.is_active = req.is_active
+
+    if not req.is_active:
+        # Immediate session invalidation for suspended user
+        target_user.sessions_revoked_at = now_utc
+        # Proactively purge session cache from Redis
+        active_sessions_stmt = select(UserSession.session_token_hash).where(UserSession.user_id == user_id)
+        session_hashes = (await db.execute(active_sessions_stmt)).scalars().all()
+        for s_hash in session_hashes:
+            await delete_cached_session(s_hash)
+
+        await db.execute(
+            update(UserSession)
+            .where(UserSession.user_id == user_id)
+            .values(is_revoked=True)
+        )
+
+    # Durable authorization policy invalidation & outbox emission
+    await increment_policy_version_and_outbox(
+        db=db,
+        scope_type="platform",
+        scope_id=PLATFORM_SCOPE_ID,
+        event_type="user_status_updated",
+        target_user_id=target_user.id,
+    )
+
+    action_name = "user_activated" if req.is_active else "user_suspended"
+    await record_audit_event(
+        db=db,
+        action=action_name,
+        resource_type="user",
+        resource_id=str(target_user.id),
+        outcome=AuditOutcome.SUCCESS,
+        actor_user_id=admin_user.id,
+        actor_email=admin_user.email,
+        actor_role=admin_user.platform_role.value if admin_user.platform_role else "none",
+        reason=req.reason or f"Account {'reactivated' if req.is_active else 'suspended'} by admin",
+        diff_payload={"is_active": req.is_active},
+        ip_address=client_ip,
+        user_agent=user_agent,
+        correlation_id=correlation_id,
+    )
+    await db.commit()
+
+    return UserResponse(
+        id=str(target_user.id),
+        email=target_user.email,
+        full_name=target_user.full_name,
+        platform_role=target_user.platform_role.value if target_user.platform_role else None,
+        mfa_enabled=target_user.mfa_enabled,
+        is_active=target_user.is_active,
+    )
+
+
+@router.post(
+    "/{user_id}/role",
+    response_model=UserResponse,
+    summary="Update platform role for a user",
+)
+async def update_user_role(
+    user_id: uuid.UUID,
+    req: UserRoleUpdateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    admin_user: User = Depends(require_super_admin),
+) -> UserResponse:
+    """
+    Modifies a user's platform role.
+    Role changes immediately revoke all active sessions to force re-authentication.
+    """
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    correlation_id = getattr(request.state, "correlation_id", uuid.uuid4())
+
+    stmt = select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise AppException(
+            code="USER_NOT_FOUND",
+            message="Target user not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Concurrency-safe lockout protection: cannot demote the last active Platform Owner
+    if target_user.platform_role == PlatformRole.PLATFORM_OWNER and req.platform_role != PlatformRole.PLATFORM_OWNER:
+        await check_last_platform_owner_lockout(db, user_id)
+
+    now_utc = datetime.now(timezone.utc)
+    old_role = target_user.platform_role.value if target_user.platform_role else None
+    target_user.platform_role = req.platform_role
+    target_user.sessions_revoked_at = now_utc
+
+    # Proactively purge session cache from Redis
+    active_sessions_stmt = select(UserSession.session_token_hash).where(UserSession.user_id == user_id)
+    session_hashes = (await db.execute(active_sessions_stmt)).scalars().all()
+    for s_hash in session_hashes:
+        await delete_cached_session(s_hash)
+
+    # Invalidate all prior sessions
+    await db.execute(
+        update(UserSession)
+        .where(UserSession.user_id == user_id)
+        .values(is_revoked=True)
+    )
+
+    # Durable authorization policy invalidation & outbox emission
+    await increment_policy_version_and_outbox(
+        db=db,
+        scope_type="platform",
+        scope_id=PLATFORM_SCOPE_ID,
+        event_type="user_role_updated",
+        target_user_id=target_user.id,
+    )
+
+    await record_audit_event(
+        db=db,
+        action="user_role_changed",
+        resource_type="user",
+        resource_id=str(target_user.id),
+        outcome=AuditOutcome.SUCCESS,
+        actor_user_id=admin_user.id,
+        actor_email=admin_user.email,
+        actor_role=admin_user.platform_role.value if admin_user.platform_role else "none",
+        reason=req.reason or f"Role updated from {old_role} to {req.platform_role}",
+        diff_payload={"old_role": old_role, "new_role": req.platform_role.value if req.platform_role else None},
+        ip_address=client_ip,
+        user_agent=user_agent,
+        correlation_id=correlation_id,
+    )
+    await db.commit()
+
+    return UserResponse(
+        id=str(target_user.id),
+        email=target_user.email,
+        full_name=target_user.full_name,
+        platform_role=target_user.platform_role.value if target_user.platform_role else None,
+        mfa_enabled=target_user.mfa_enabled,
+        is_active=target_user.is_active,
+    )
+
+
+@router.post(
+    "/{user_id}/revoke-sessions",
+    summary="Revoke all active sessions for a user",
+)
+async def revoke_user_sessions(
+    user_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    admin_user: User = Depends(require_security_admin),
+) -> dict:
+    """
+    Terminates all active sessions for a target user.
+    Sets users.sessions_revoked_at = NOW() and marks user_sessions.is_revoked = TRUE.
+    """
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    correlation_id = getattr(request.state, "correlation_id", uuid.uuid4())
+
+    stmt = select(User).where(User.id == user_id, User.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    target_user = result.scalar_one_or_none()
+    if not target_user:
+        raise AppException(
+            code="USER_NOT_FOUND",
+            message="Target user not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    target_user.sessions_revoked_at = now_utc
+
+    # Proactively purge session cache from Redis
+    active_sessions_stmt = select(UserSession.session_token_hash).where(UserSession.user_id == user_id)
+    session_hashes = (await db.execute(active_sessions_stmt)).scalars().all()
+    for s_hash in session_hashes:
+        await delete_cached_session(s_hash)
+
+    await db.execute(
+        update(UserSession)
+        .where(UserSession.user_id == user_id)
+        .values(is_revoked=True)
+    )
+
+    await record_audit_event(
+        db=db,
+        action="user_sessions_revoked",
+        resource_type="user",
+        resource_id=str(target_user.id),
+        outcome=AuditOutcome.SUCCESS,
+        actor_user_id=admin_user.id,
+        actor_email=admin_user.email,
+        actor_role=admin_user.platform_role.value if admin_user.platform_role else "none",
+        reason="Administrative session revocation",
+        ip_address=client_ip,
+        user_agent=user_agent,
+        correlation_id=correlation_id,
+    )
+    await db.commit()
+
+    return {"message": f"All sessions for user {target_user.email} revoked successfully"}
