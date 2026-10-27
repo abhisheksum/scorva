@@ -213,3 +213,9 @@ async def post_tenant_update_hackathon_status(
         user_agent=ua,
         correlation_id=corr_id,
     )
+
+
+# Mount Subresources Router (Teams, Submissions, Judges, Rubrics, Overview)
+from apps.api.modules.hackathons.subresources_router import router as subresources_router
+router.include_router(subresources_router)
+

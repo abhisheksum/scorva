@@ -30,7 +30,7 @@ def test_alembic_configuration_validity():
     """Verifies that alembic.ini and script directory are discoverable and valid."""
     alembic_cfg = Config("alembic.ini")
     script = ScriptDirectory.from_config(alembic_cfg)
-    # Phase 4 Milestone 2 remediation head
+    # Phase 4 Milestone 5.1 outbox head
     heads = script.get_heads()
     assert len(heads) == 1
-    assert heads[0] == "d630cee07d82"
+    assert heads[0] == "9e37b1c1921d"

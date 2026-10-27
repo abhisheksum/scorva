@@ -136,7 +136,7 @@ CONFIGURATION_CATALOG: List[SettingDefinition] = [
         max_value=None,
         is_configurable=True,
         effect_timing="next_job",
-        description="Default AI model provider ('ollama' or 'mock')",
+        description="Default AI model provider ('ollama' or 'mock'). Mock provider is forbidden in production.",
     ),
     SettingDefinition(
         key="ai.default_model",
@@ -217,6 +217,34 @@ CONFIGURATION_CATALOG: List[SettingDefinition] = [
         is_configurable=True,
         effect_timing="immediate",
         description="Worker lock lease expiration duration before crash reaper intervention",
+    ),
+    SettingDefinition(
+        key="eval.tenant_max_concurrent_jobs",
+        tier="tier_2",
+        data_type="int",
+        default_value="3",
+        allow_org_override=True,
+        allow_hackathon_override=False,
+        min_value="1",
+        max_value="50",
+        is_configurable=True,
+        effect_timing="immediate",
+        description="Maximum simultaneous active evaluation jobs permitted per organization",
+    ),
+
+    # Authentication & Access Governance Settings
+    SettingDefinition(
+        key="auth.mfa_enforced",
+        tier="tier_1",
+        data_type="bool",
+        default_value="false",
+        allow_org_override=False,
+        allow_hackathon_override=False,
+        min_value=None,
+        max_value=None,
+        is_configurable=True,
+        effect_timing="immediate",
+        description="Whether Multi-Factor Authentication (TOTP) is mandatory for platform administrators",
     ),
 
     # Authorization & Cache Settings

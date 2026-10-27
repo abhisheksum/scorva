@@ -17,8 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from apps.api.modules.evaluations.ai_provider import (
     AIProviderClient,
+    AIProviderConfigError,
+    AIProviderConnectionError,
     AIProviderError,
     AIProviderFormatError,
+    AIProviderResponseSizeError,
     AIProviderSSRFError,
     AIProviderTimeoutError,
 )
@@ -292,14 +295,21 @@ async def execute_evaluation_with_retry(
                 temperature=current_temp,
                 max_tokens=max_tokens,
             )
-        except AIProviderSSRFError:
-            # SSRF violations must never be retried
+        except (
+            AIProviderTimeoutError,
+            AIProviderConnectionError,
+            AIProviderSSRFError,
+            AIProviderResponseSizeError,
+            AIProviderConfigError,
+        ):
+            # Network infrastructure, timeouts, SSRF, oversized response, and configuration errors
+            # must NEVER be retried with schema correction prompts. Propagate immediately as typed errors.
             raise
-        except (AIProviderFormatError, AIProviderTimeoutError) as exc:
+        except AIProviderFormatError as exc:
             last_error = exc
             if attempt < max_retries and getattr(exc, "retryable", False):
                 logger.warning(
-                    "Recoverable AI provider error on attempt %d: %s. Retrying with temperature 0.0...",
+                    "Recoverable AI provider format error on attempt %d: %s. Retrying with temperature 0.0...",
                     attempt + 1,
                     exc,
                 )
@@ -310,7 +320,7 @@ async def execute_evaluation_with_retry(
                 retryable=False,
             ) from exc
         except AIProviderError:
-            # Other non-retryable provider errors fail closed
+            # Other non-retryable provider errors fail closed without schema retries
             raise
 
         # Validate structured output against rubric criteria and evidence

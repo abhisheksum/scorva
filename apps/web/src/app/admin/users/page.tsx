@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Users,
   RefreshCw,
@@ -11,6 +11,10 @@ import {
   CheckCircle2,
   Lock,
   Search,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Calendar,
 } from 'lucide-react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { api, ApiClientError } from '@/lib/api-client';
@@ -18,32 +22,96 @@ import { UserProfile } from '@/types/api';
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [total, setTotal] = useState<number>(0);
+  const [page, setPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [limit] = useState<number>(15);
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Debounce search query input by 300ms
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const loadUsers = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
     setIsLoading(true);
     setError(null);
     try {
-      const data = await api.getUsers();
-      setUsers(data);
+      const data = await api.getUsers(
+        {
+          page,
+          limit,
+          search: debouncedSearch.trim() || undefined,
+          role: roleFilter !== 'all' ? roleFilter : undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+        },
+        { signal }
+      );
+
+      if (signal.aborted) return;
+      setUsers(data.items);
+      setTotal(data.total);
+      setTotalPages(data.total_pages || 1);
     } catch (err: unknown) {
+      if (signal.aborted) return;
       if (err instanceof ApiClientError) {
+        if (err.code === 'REQUEST_ABORTED') return;
         setError(err.message);
       } else {
         setError('Failed to load user directory.');
       }
     } finally {
-      setIsLoading(false);
+      if (!signal.aborted) {
+        setIsLoading(false);
+      }
     }
-  }, []);
+  }, [page, limit, debouncedSearch, roleFilter, statusFilter]);
 
   useEffect(() => {
     loadUsers();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [loadUsers]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setDebouncedSearch(searchQuery);
+    setPage(1);
+  };
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setDebouncedSearch('');
+    setRoleFilter('all');
+    setStatusFilter('all');
+    setPage(1);
+  };
 
   const handleToggleStatus = async (user: UserProfile) => {
     const action = user.is_active ? 'suspend' : 'activate';
@@ -91,12 +159,6 @@ export default function UsersPage() {
     }
   };
 
-  const filteredUsers = users.filter((u) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return u.email.toLowerCase().includes(q) || u.full_name.toLowerCase().includes(q);
-  });
-
   const formatRole = (role?: string | null) => {
     if (!role) return 'None (Organization User)';
     return role
@@ -104,6 +166,21 @@ export default function UsersPage() {
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
       .join(' ');
   };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '—';
+    try {
+      return new Date(dateStr).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      });
+    } catch {
+      return '—';
+    }
+  };
+
+  const hasActiveFilters = searchQuery !== '' || roleFilter !== 'all' || statusFilter !== 'all';
 
   return (
     <div className="space-y-6">
@@ -142,20 +219,84 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Search Toolbar */}
-      <div className="p-4 bg-surface border border-surface-border rounded-xl flex items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search users by name or email..."
-            className="w-full pl-9 pr-3 py-1.5 bg-surface-elevated border border-surface-border rounded-lg text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary"
-          />
+      {/* Search & Filter Toolbar */}
+      <div className="p-4 bg-surface border border-surface-border rounded-xl flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 shadow-surface-elevated">
+        <div className="flex flex-1 flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {/* Search Input */}
+          <form onSubmit={handleSearchSubmit} className="relative flex-1 sm:max-w-xs">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by name or email..."
+              className="w-full pl-9 pr-8 py-1.5 bg-surface-elevated border border-surface-border rounded-lg text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-primary transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setDebouncedSearch('');
+                  setPage(1);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary p-0.5 rounded"
+                title="Clear search"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </form>
+
+          {/* Role Filter */}
+          <select
+            value={roleFilter}
+            onChange={(e) => {
+              setRoleFilter(e.target.value);
+              setPage(1);
+            }}
+            className="px-3 py-1.5 bg-surface-elevated border border-surface-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
+            aria-label="Filter by Platform Role"
+          >
+            <option value="all">All Roles</option>
+            <option value="platform_owner">Platform Owner</option>
+            <option value="platform_ops_admin">Platform Ops Admin</option>
+            <option value="ai_ops_admin">AI Ops Admin</option>
+            <option value="security_admin">Security Admin</option>
+            <option value="support_admin">Support Admin</option>
+            <option value="billing_admin">Billing Admin</option>
+            <option value="none">Org Users (No Platform Role)</option>
+          </select>
+
+          {/* Status Filter */}
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPage(1);
+            }}
+            className="px-3 py-1.5 bg-surface-elevated border border-surface-border rounded-lg text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
+            aria-label="Filter by Account Status"
+          >
+            <option value="all">All Statuses</option>
+            <option value="active">Active Only</option>
+            <option value="suspended">Suspended Only</option>
+          </select>
+
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="px-2.5 py-1.5 text-xs text-text-muted hover:text-text-primary hover:bg-surface-elevated border border-dashed border-surface-border rounded-lg transition-colors flex items-center gap-1.5 self-start sm:self-auto"
+            >
+              <X className="w-3 h-3" />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
-        <div className="text-xs text-text-muted shrink-0">
-          Total Users: <span className="font-semibold text-text-primary">{filteredUsers.length}</span>
+
+        <div className="text-xs text-text-muted shrink-0 self-end md:self-center">
+          Total Users: <span className="font-semibold text-text-primary">{total.toLocaleString()}</span>
         </div>
       </div>
 
@@ -169,24 +310,40 @@ export default function UsersPage() {
                 <th className="py-3 px-4">Platform Role</th>
                 <th className="py-3 px-4">Account Status</th>
                 <th className="py-3 px-4">MFA Policy</th>
+                <th className="py-3 px-4">Created Date</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border">
               {isLoading && users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-text-muted">
-                    Loading users directory...
+                  <td colSpan={6} className="py-12 text-center text-text-muted">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                      <span>Loading users directory...</span>
+                    </div>
                   </td>
                 </tr>
-              ) : filteredUsers.length === 0 ? (
+              ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-text-muted">
-                    No users found matching query.
+                  <td colSpan={6} className="py-12 text-center text-text-muted">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Users className="w-6 h-6 text-text-muted/60" />
+                      <p>No users found matching query.</p>
+                      {hasActiveFilters && (
+                        <button
+                          type="button"
+                          onClick={handleClearFilters}
+                          className="mt-1 text-xs text-primary hover:underline font-medium"
+                        >
+                          Clear all filters
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ) : (
-                filteredUsers.map((u) => (
+                users.map((u) => (
                   <tr key={u.id} className="hover:bg-surface-hover/50 transition-colors">
                     <td className="py-3 px-4">
                       <div className="font-medium text-text-primary">{u.full_name}</div>
@@ -226,6 +383,9 @@ export default function UsersPage() {
                         </span>
                       )}
                     </td>
+                    <td className="py-3 px-4 text-text-muted font-mono text-[11px]">
+                      {formatDate(u.created_at)}
+                    </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
@@ -256,6 +416,45 @@ export default function UsersPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Bar */}
+        <div className="p-4 border-t border-surface-border flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-text-muted">
+          <div>
+            Showing{' '}
+            <span className="font-semibold text-text-primary">
+              {total === 0 ? 0 : (page - 1) * limit + 1}
+            </span>{' '}
+            to{' '}
+            <span className="font-semibold text-text-primary">
+              {Math.min(page * limit, total)}
+            </span>{' '}
+            of <span className="font-semibold text-text-primary">{total.toLocaleString()}</span> users
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(p - 1, 1))}
+              disabled={page <= 1 || isLoading}
+              className="p-1.5 rounded-lg border border-surface-border hover:bg-surface-elevated disabled:opacity-40 disabled:cursor-not-allowed text-text-primary transition-colors"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="px-2 font-medium">
+              Page {page} of {Math.max(totalPages, 1)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+              disabled={page >= totalPages || isLoading}
+              className="p-1.5 rounded-lg border border-surface-border hover:bg-surface-elevated disabled:opacity-40 disabled:cursor-not-allowed text-text-primary transition-colors"
+              aria-label="Next page"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

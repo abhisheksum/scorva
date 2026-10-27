@@ -1,8 +1,9 @@
+import math
 from datetime import datetime, timezone
 from typing import List, Optional
 import uuid
-from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.core.database import get_db_session
@@ -19,25 +20,80 @@ from apps.api.modules.rbac.service import (
     increment_policy_version_and_outbox,
 )
 from apps.api.modules.users.models import PlatformRole, User, UserSession
-from apps.api.modules.users.schemas import UserRoleUpdateRequest, UserStatusUpdateRequest
+from apps.api.modules.users.schemas import (
+    PaginatedUsersResponse,
+    UserRoleUpdateRequest,
+    UserStatusUpdateRequest,
+)
 
 router = APIRouter(prefix="/admin/users", tags=["Admin User Management"])
 
 
 @router.get(
     "",
-    response_model=List[UserResponse],
-    summary="List platform users (Super Admin or Security Admin)",
+    response_model=PaginatedUsersResponse,
+    summary="List platform users with pagination and search (Super Admin or Security Admin)",
 )
+@router.get("/", response_model=PaginatedUsersResponse, include_in_schema=False)
 async def list_users(
+    page: int = Query(1, ge=1, description="Page number"),
+    limit: int = Query(15, ge=1, le=100, description="Items per page"),
+    search: Optional[str] = Query(None, description="Search term for full name or email"),
+    role: Optional[str] = Query(None, description="Filter by platform role or 'none'"),
+    status: Optional[str] = Query(None, description="Filter by account status ('active', 'suspended')"),
+    sort_by: str = Query("created_at", description="Sort field ('created_at', 'full_name', 'email')"),
+    sort_order: str = Query("desc", description="Sort order ('asc', 'desc')"),
     db: AsyncSession = Depends(get_db_session),
     admin_user: User = Depends(require_security_admin),
-) -> List[UserResponse]:
-    """Retrieves directory of platform users."""
-    stmt = select(User).where(User.deleted_at.is_(None)).order_by(User.created_at.desc())
+) -> PaginatedUsersResponse:
+    """Retrieves paginated directory of platform users with search and filtering."""
+    filters = [User.deleted_at.is_(None)]
+
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        filters.append(or_(User.email.ilike(term), User.full_name.ilike(term)))
+
+    if role:
+        role_cleaned = role.strip().lower()
+        if role_cleaned == "none":
+            filters.append(User.platform_role.is_(None))
+        else:
+            try:
+                matched_role = PlatformRole(role_cleaned)
+                filters.append(User.platform_role == matched_role)
+            except ValueError:
+                pass
+
+    if status:
+        status_cleaned = status.strip().lower()
+        if status_cleaned == "active":
+            filters.append(User.is_active.is_(True))
+        elif status_cleaned in ("suspended", "inactive"):
+            filters.append(User.is_active.is_(False))
+
+    count_stmt = select(func.count(User.id)).where(*filters)
+    total = (await db.execute(count_stmt)).scalar() or 0
+    total_pages = math.ceil(total / limit) if total > 0 else 0
+
+    order_map = {
+        "created_at": User.created_at,
+        "full_name": User.full_name,
+        "email": User.email,
+    }
+    order_col = order_map.get(sort_by, User.created_at)
+    order_expr = order_col.desc() if sort_order.lower() == "desc" else order_col.asc()
+
+    stmt = (
+        select(User)
+        .where(*filters)
+        .order_by(order_expr)
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     users = result.scalars().all()
-    return [
+
+    items = [
         UserResponse(
             id=str(u.id),
             email=u.email,
@@ -45,9 +101,19 @@ async def list_users(
             platform_role=u.platform_role.value if u.platform_role else None,
             mfa_enabled=u.mfa_enabled,
             is_active=u.is_active,
+            created_at=u.created_at,
+            last_login_at=u.last_login_at,
         )
         for u in users
     ]
+
+    return PaginatedUsersResponse(
+        items=items,
+        total=total,
+        page=page,
+        limit=limit,
+        total_pages=total_pages,
+    )
 
 
 @router.post(

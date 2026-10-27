@@ -45,17 +45,46 @@ def parse_github_url(repo_url: str) -> Tuple[str, str]:
     Raises GitHubIngestionError on invalid or suspicious format.
     """
     clean = repo_url.strip()
+    if not clean:
+        raise GitHubIngestionError("Repository URL cannot be empty.", code="MALFORMED_URL")
+
+    # Security check: forbid embedded credentials or user-info
+    if "@" in clean:
+        raise GitHubIngestionError(
+            "Security violation: Embedded credentials or user-info are strictly forbidden in repository URLs.",
+            code="CREDENTIALS_IN_URL_FORBIDDEN",
+        )
+
     if not clean.startswith("http://") and not clean.startswith("https://"):
         clean = "https://" + clean
 
     try:
         parsed = urlparse(clean)
     except Exception as exc:
-        raise GitHubIngestionError(f"Malformed repository URL '{repo_url}': {exc}") from exc
+        raise GitHubIngestionError(f"Malformed repository URL '{repo_url}': {exc}", code="MALFORMED_URL") from exc
 
-    if parsed.netloc.lower() not in ("github.com", "www.github.com"):
+    if parsed.username or parsed.password:
         raise GitHubIngestionError(
-            f"Unsupported Git hosting provider '{parsed.netloc}'. Scorva Phase 4 requires GitHub.",
+            "Security violation: Embedded credentials or user-info are strictly forbidden in repository URLs.",
+            code="CREDENTIALS_IN_URL_FORBIDDEN",
+        )
+
+    if parsed.port not in (None, 80, 443):
+        raise GitHubIngestionError(
+            f"Security violation: Non-standard port '{parsed.port}' is forbidden.",
+            code="UNSUPPORTED_GIT_PORT",
+        )
+
+    if parsed.query or parsed.fragment:
+        raise GitHubIngestionError(
+            "Security violation: Query parameters and URL fragments are forbidden in repository URLs.",
+            code="INVALID_URL_COMPONENTS",
+        )
+
+    hostname = (parsed.hostname or "").lower()
+    if hostname not in ("github.com", "www.github.com"):
+        raise GitHubIngestionError(
+            f"Unsupported Git hosting provider '{hostname or parsed.netloc}'. Scorva requires GitHub.",
             code="UNSUPPORTED_GIT_PROVIDER",
         )
 
@@ -71,11 +100,12 @@ def parse_github_url(repo_url: str) -> Tuple[str, str]:
 
     # Validate characters (alphanumeric, hyphens, underscores, dots)
     if not owner.replace("-", "").replace("_", "").isalnum():
-        raise GitHubIngestionError(f"Invalid characters in repository owner '{owner}'.")
+        raise GitHubIngestionError(f"Invalid characters in repository owner '{owner}'.", code="INVALID_REPOSITORY_PATH")
     if not repo.replace("-", "").replace("_", "").replace(".", "").isalnum():
-        raise GitHubIngestionError(f"Invalid characters in repository name '{repo}'.")
+        raise GitHubIngestionError(f"Invalid characters in repository name '{repo}'.", code="INVALID_REPOSITORY_PATH")
 
     return owner, repo
+
 
 
 class GitHubIngestionClient:
@@ -190,6 +220,12 @@ class GitHubIngestionClient:
                 # Not a redirect, check response status
                 if resp.status_code == 404:
                     await resp.aclose()
+                    if "/branches/" in current_url or "/commits/" in current_url:
+                        raise GitHubIngestionError(
+                            f"Branch or commit not found on GitHub (HTTP 404): {current_url}.",
+                            code="BRANCH_NOT_FOUND",
+                            status_code=404,
+                        )
                     raise GitHubIngestionError(
                         f"Repository resource not found on GitHub (HTTP 404): {current_url}. "
                         "Verify repository URL or ensure access credentials have 'contents:read' scope.",
@@ -197,12 +233,33 @@ class GitHubIngestionClient:
                         status_code=404,
                     )
                 elif resp.status_code == 401 or resp.status_code == 403:
+                    remaining = resp.headers.get("x-ratelimit-remaining")
+                    msg = (await resp.aread()).decode("utf-8", errors="replace")[:200]
+                    await resp.aclose()
+                    if remaining == "0" or "rate limit" in msg.lower():
+                        raise GitHubIngestionError(
+                            f"GitHub API rate limit exceeded: {msg}",
+                            code="GITHUB_RATE_LIMITED",
+                            status_code=429,
+                        )
+                    if resp.status_code == 403:
+                        raise GitHubIngestionError(
+                            f"GitHub repository access forbidden (HTTP 403): {msg}",
+                            code="PRIVATE_REPO_UNAUTHORIZED",
+                            status_code=403,
+                        )
+                    raise GitHubIngestionError(
+                        f"GitHub authentication error (HTTP 401): {msg}",
+                        code="GITHUB_AUTH_ERROR",
+                        status_code=401,
+                    )
+                elif resp.status_code >= 500:
                     msg = (await resp.aread()).decode("utf-8", errors="replace")[:200]
                     await resp.aclose()
                     raise GitHubIngestionError(
-                        f"GitHub authentication / rate limit error (HTTP {resp.status_code}): {msg}",
-                        code="GITHUB_AUTH_ERROR",
-                        status_code=resp.status_code,
+                        f"GitHub service unavailable (HTTP {resp.status_code}): {msg}",
+                        code="GITHUB_UNAVAILABLE",
+                        status_code=502,
                     )
                 elif resp.status_code >= 400:
                     msg = (await resp.aread()).decode("utf-8", errors="replace")[:200]
@@ -276,6 +333,47 @@ class GitHubIngestionClient:
                 f"Failed to parse commit SHA from GitHub response: {exc}",
                 code="INVALID_COMMIT_RESPONSE",
             ) from exc
+
+    async def verify_repository_access(
+        self,
+        owner: str,
+        repo: str,
+        target_branch: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Queries GitHub API with Profile A security to verify:
+        1. Repository existence and accessibility
+        2. Default branch and visibility
+        3. Target branch existence and commit SHA
+        Returns metadata dictionary on success.
+        Raises GitHubIngestionError on failure.
+        """
+        # 1. Check repo metadata
+        repo_url = f"https://api.github.com/repos/{owner}/{repo}"
+        repo_resp = await self._make_profile_a_request(repo_url, method="GET", stream_response=False)
+        assert isinstance(repo_resp, httpx.Response)
+
+        repo_data = repo_resp.json()
+        default_branch = repo_data.get("default_branch") or "main"
+        is_private = bool(repo_data.get("private", False))
+
+        # 2. Determine target branch
+        requested_branch = target_branch.strip() if target_branch and target_branch.strip() else default_branch
+
+        # 3. Check requested branch commit SHA
+        commit_sha = await self.resolve_head_commit_sha(owner, repo, branch=requested_branch)
+
+        return {
+            "owner": owner,
+            "repo": repo,
+            "canonical_repo_id": f"{owner}/{repo}",
+            "default_branch": default_branch,
+            "target_branch": requested_branch,
+            "commit_sha": commit_sha,
+            "is_private": is_private,
+            "is_accessible": True,
+        }
+
 
     async def download_repository_tarball(
         self,

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from apps.api.config import settings
 from apps.api.core.exceptions import AppException
 from apps.api.modules.audit.models import AuditOutcome
 from apps.api.modules.audit.service import record_audit_event
@@ -149,6 +150,23 @@ def validate_and_parse_setting_value(
                 message=f"Setting '{key}' string value cannot be empty.",
                 title="Invalid Setting Value",
             )
+        if key == "ai.default_provider":
+            normalized_provider = raw.lower()
+            if normalized_provider not in ("ollama", "mock"):
+                raise AppException(
+                    status_code=422,
+                    code="UNSUPPORTED_AI_PROVIDER",
+                    message=f"Setting '{key}' only supports 'ollama' or 'mock'. Got '{value_str}'.",
+                    title="Unsupported AI Provider",
+                )
+            if normalized_provider == "mock" and settings.SCORVA_ENV.lower() == "production":
+                raise AppException(
+                    status_code=403,
+                    code="MOCK_PROVIDER_DISALLOWED_IN_PRODUCTION",
+                    message="Mock AI provider is strictly prohibited in production environments.",
+                    title="Production Security Violation",
+                )
+            return normalized_provider
         return raw
 
     elif data_type == "json":
@@ -592,6 +610,8 @@ async def resolve_effective_configuration(
 
             eval_max_retries=int(raw_map.get("eval.max_retries", "3")),
             eval_lock_timeout_seconds=int(raw_map.get("eval.lock_timeout_seconds", "300")),
+
+            auth_mfa_enforced=raw_map.get("auth.mfa_enforced", "false").lower() == "true",
 
             authz_cache_ttl_seconds=int(raw_map.get("authz.cache_ttl_seconds", "30")),
             authz_policy_version_check_seconds=int(raw_map.get("authz.policy_version_check_seconds", "5")),

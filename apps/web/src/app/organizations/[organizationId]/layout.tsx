@@ -228,11 +228,11 @@ export default function TenantOrganizationLayout({
             <h2 className="text-base font-semibold text-text-primary">Tenant Access Denied</h2>
             <p className="text-xs text-text-muted mt-1 mb-4">{error}</p>
             <Link
-              href="/admin/organizations"
+              href={user?.routing?.default_destination || (user?.platform_role ? '/admin' : '/login')}
               className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-text-primary bg-surface-elevated hover:bg-surface-hover rounded-lg transition-colors border border-surface-border"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>Return to Platform Admin</span>
+              <span>{user?.platform_role ? 'Return to Platform Admin' : 'Return to Workspace'}</span>
             </Link>
           </div>
         ) : (

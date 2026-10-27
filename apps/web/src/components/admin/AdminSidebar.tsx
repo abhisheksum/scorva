@@ -91,30 +91,13 @@ const navigationSections: NavSection[] = [
         priority: 'P0',
       },
       {
-        title: 'Support Center',
-        href: '/admin/support',
-        icon: LifeBuoy,
-        priority: 'P1',
-      },
-      {
-        title: 'Notifications',
-        href: '/admin/notifications',
-        icon: Bell,
-        priority: 'P1',
-      },
-    ],
-  },
-  {
-    title: 'Configuration',
-    items: [
-      {
         title: 'Integrations',
         href: '/admin/integrations',
         icon: Blocks,
         priority: 'P0',
       },
       {
-        title: 'Settings',
+        title: 'Platform Settings',
         href: '/admin/settings',
         icon: Settings,
         priority: 'P0',
@@ -146,7 +129,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   };
 
   const navContent = (
-    <div className="flex flex-col h-full bg-surface border-r border-surface-border select-none">
+    <div className="flex flex-col h-full bg-sidebar border-r border-surface-border select-none">
       {/* Brand Header */}
       <div className="flex items-center justify-between px-4 h-16 border-b border-surface-border shrink-0">
         <Link
@@ -239,21 +222,29 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       </nav>
 
       {/* Footer / Desktop Collapse Toggle */}
-      <div className="p-3 border-t border-surface-border shrink-0 hidden md:block">
-        <button
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          className="flex items-center gap-2.5 w-full px-3 py-2 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-surface-elevated rounded-lg transition-colors justify-center"
-        >
-          {isCollapsed ? (
+      <div className="p-3 border-t border-surface-border shrink-0 hidden md:flex items-center gap-2.5">
+        <div className="w-8 h-8 rounded-full bg-surface-elevated border border-surface-border flex items-center justify-center text-xs font-bold text-text-primary shrink-0 shadow-inner">
+          N
+        </div>
+        {!isCollapsed && (
+          <button
+            onClick={() => setIsCollapsed(true)}
+            aria-label="Collapse sidebar"
+            className="flex items-center gap-2 px-2 py-1.5 text-xs font-medium text-text-muted hover:text-text-primary hover:bg-surface-elevated rounded-lg transition-colors flex-1"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Collapse Sidebar</span>
+          </button>
+        )}
+        {isCollapsed && (
+          <button
+            onClick={() => setIsCollapsed(false)}
+            aria-label="Expand sidebar"
+            className="p-1 text-text-muted hover:text-text-primary rounded"
+          >
             <ChevronRight className="w-4 h-4" />
-          ) : (
-            <>
-              <ChevronLeft className="w-4 h-4" />
-              <span>Collapse Sidebar</span>
-            </>
-          )}
-        </button>
+          </button>
+        )}
       </div>
     </div>
   );

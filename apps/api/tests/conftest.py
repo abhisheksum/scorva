@@ -14,6 +14,7 @@ from apps.api.config import settings
 from apps.api.core.database import AsyncSessionLocal
 from apps.api.core.redis import flush_test_redis
 from apps.api.core.security import encrypt_totp_secret, generate_secure_token, hash_password, hash_session_token
+from apps.api.modules.evaluations.models import HackathonJudge, Submission, Team, TeamMember
 from apps.api.modules.hackathons.models import Hackathon
 from apps.api.modules.organizations.models import Organization, OrganizationMembership
 from apps.api.modules.users.models import PlatformRole, User, UserSession
@@ -67,7 +68,17 @@ async def create_user_helper(db_session):
                 select(Organization.id).where(Organization.owner_id.in_(existing_ids))
             )).scalars().all()
             if owned_org_ids:
-                await db_session.execute(delete(Hackathon).where(Hackathon.organization_id.in_(owned_org_ids)))
+                hack_ids = (await db_session.execute(
+                    select(Hackathon.id).where(Hackathon.organization_id.in_(owned_org_ids))
+                )).scalars().all()
+                if hack_ids:
+                    await db_session.execute(delete(Submission).where(Submission.hackathon_id.in_(hack_ids)))
+                    await db_session.execute(delete(TeamMember).where(TeamMember.team_id.in_(
+                        select(Team.id).where(Team.hackathon_id.in_(hack_ids))
+                    )))
+                    await db_session.execute(delete(Team).where(Team.hackathon_id.in_(hack_ids)))
+                    await db_session.execute(delete(HackathonJudge).where(HackathonJudge.hackathon_id.in_(hack_ids)))
+                    await db_session.execute(delete(Hackathon).where(Hackathon.id.in_(hack_ids)))
                 await db_session.execute(delete(OrganizationMembership).where(OrganizationMembership.organization_id.in_(owned_org_ids)))
                 await db_session.execute(delete(Organization).where(Organization.id.in_(owned_org_ids)))
             await db_session.execute(delete(UserSession).where(UserSession.user_id.in_(existing_ids)))

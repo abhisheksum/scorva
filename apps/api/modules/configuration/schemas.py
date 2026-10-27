@@ -96,6 +96,8 @@ class EffectiveConfiguration(BaseModel):
     eval_max_retries: int = 3
     eval_lock_timeout_seconds: int = 300
 
+    auth_mfa_enforced: bool = False
+
     authz_cache_ttl_seconds: int = 30
     authz_policy_version_check_seconds: int = 5
 

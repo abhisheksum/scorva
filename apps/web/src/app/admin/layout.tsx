@@ -18,8 +18,13 @@ export default function AdminLayout({
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      router.replace('/login');
+    if (!isLoading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (!user.platform_role) {
+        const dest = user.routing?.default_destination || '/participant';
+        router.replace(dest);
+      }
     }
   }, [user, isLoading, router]);
 
@@ -37,8 +42,20 @@ export default function AdminLayout({
     );
   }
 
-  if (!user) {
-    return null;
+  if (!user || !user.platform_role) {
+    return (
+      <div className="h-screen w-screen bg-background flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-status-danger/10 border border-status-danger/20 flex items-center justify-center text-status-danger">
+          <Shield className="w-5 h-5 animate-pulse" />
+        </div>
+        <div className="flex flex-col items-center gap-1 text-center max-w-sm px-4">
+          <span className="text-sm font-semibold text-text-primary">Administrative Access Restricted</span>
+          <span className="text-xs text-text-muted">
+            Your account does not possess platform administration privileges. Redirecting to your assigned workspace...
+          </span>
+        </div>
+      </div>
+    );
   }
 
   return (

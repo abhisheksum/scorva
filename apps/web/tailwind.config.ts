@@ -10,28 +10,35 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: '#0B1020',
+        background: '#07111F',
         surface: {
-          DEFAULT: '#111827',
-          elevated: '#1F2937',
-          border: '#374151',
-          hover: '#1E293B',
+          DEFAULT: '#0D1A2B',
+          elevated: '#112139',
+          border: '#24364D',
+          hover: '#162B45',
         },
+        sidebar: '#0A1424',
         primary: {
-          DEFAULT: '#3B82F6',
-          hover: '#2563EB',
+          DEFAULT: '#2784FF',
+          hover: '#1A6FE8',
           muted: '#1D4ED8',
         },
         text: {
-          primary: '#F8FAFC',
-          secondary: '#94A3B8',
-          muted: '#64748B',
+          primary: '#F3F6FC',
+          secondary: '#91A4BE',
+          muted: '#5A7294',
         },
         status: {
-          success: '#10B981',
-          warning: '#F59E0B',
-          error: '#EF4444',
-          info: '#3B82F6',
+          success: '#00D6A0',
+          warning: '#F5B82E',
+          error: '#FF5C66',
+          danger: '#FF5C66',
+          info: '#38BDF8',
+        },
+        accent: {
+          purple: '#A855F7',
+          cyan: '#22D3EE',
+          amber: '#F5B82E',
         },
       },
       fontFamily: {
@@ -39,6 +46,7 @@ const config: Config = {
       },
       boxShadow: {
         'surface-elevated': '0 4px 20px -2px rgba(0, 0, 0, 0.5)',
+        'card': '0 1px 3px rgba(0, 0, 0, 0.3)',
       },
     },
   },

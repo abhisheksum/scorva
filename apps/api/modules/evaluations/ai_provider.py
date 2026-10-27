@@ -65,8 +65,8 @@ class AIProviderResponseSizeError(AIProviderError):
 
 class AIProviderFormatError(AIProviderError):
     """Raised when provider response contains invalid or unparseable JSON."""
-    def __init__(self, message: str = "AI provider returned malformed or unparseable JSON response."):
-        super().__init__(message=message, code="AI_INVALID_JSON_RESPONSE", retryable=True)
+    def __init__(self, message: str = "AI provider returned malformed or unparseable JSON response.", retryable: bool = True):
+        super().__init__(message=message, code="AI_INVALID_JSON_RESPONSE", retryable=retryable)
 
 
 class AIProviderSSRFError(AIProviderError):
@@ -184,10 +184,12 @@ class OllamaProviderClient:
             raise AIProviderSSRFError(str(exc)) from exc
 
         async with client:
+            req = client.build_request("POST", "/api/chat", json=request_body)
             try:
-                response = await client.post(
-                    "/api/chat",
-                    json=request_body,
+                response = await client.send(
+                    req,
+                    stream=True,
+                    follow_redirects=False,
                 )
             except httpx.TimeoutException as exc:
                 raise AIProviderTimeoutError(
@@ -205,33 +207,63 @@ class OllamaProviderClient:
                     "Internal error communicating with AI provider."
                 ) from exc
 
-            # Verify response size
-            raw_content = response.content
-            if len(raw_content) > self.max_response_bytes:
-                raise AIProviderResponseSizeError(
-                    f"Provider response ({len(raw_content)} bytes) exceeded limit of {self.max_response_bytes} bytes."
-                )
-
-            # Check HTTP status
-            if response.status_code != 200:
-                logger.error(
-                    "Ollama returned HTTP status %d: %s",
-                    response.status_code,
-                    raw_content[:200],
-                )
-                raise AIProviderError(
-                    f"AI provider returned unexpected HTTP error status {response.status_code}.",
-                    code="AI_PROVIDER_HTTP_ERROR",
-                    retryable=(response.status_code >= 500),
-                )
-
-            # Parse top-level Ollama envelope
             try:
-                envelope = response.json()
-            except Exception as exc:
-                raise AIProviderFormatError(
-                    "AI provider returned non-JSON HTTP response body."
-                ) from exc
+                # Early check on Content-Length header if present, but do not rely on it as sole protection
+                cl_header = response.headers.get("Content-Length")
+                if cl_header:
+                    try:
+                        cl_int = int(cl_header.strip())
+                        if cl_int > self.max_response_bytes:
+                            raise AIProviderResponseSizeError(
+                                f"Provider response Content-Length ({cl_int} bytes) exceeded limit of {self.max_response_bytes} bytes."
+                            )
+                    except ValueError:
+                        pass
+
+                # Incremental chunk streaming with real-time byte bounding
+                total_bytes = 0
+                content_chunks: List[bytes] = []
+                try:
+                    async for chunk in response.aiter_bytes():
+                        total_bytes += len(chunk)
+                        if total_bytes > self.max_response_bytes:
+                            raise AIProviderResponseSizeError(
+                                f"Provider response ({total_bytes} bytes) exceeded limit of {self.max_response_bytes} bytes."
+                            )
+                        content_chunks.append(chunk)
+                except httpx.TimeoutException as exc:
+                    raise AIProviderTimeoutError(
+                        f"Inference request timed out after {timeout_seconds} seconds while reading response stream."
+                    ) from exc
+                except (httpx.ConnectError, httpx.NetworkError) as exc:
+                    raise AIProviderConnectionError(
+                        "Network error while reading response stream from internal AI provider."
+                    ) from exc
+
+                raw_content = b"".join(content_chunks)
+
+                # Check HTTP status
+                if response.status_code != 200:
+                    logger.error(
+                        "Ollama returned HTTP status %d: %s",
+                        response.status_code,
+                        raw_content[:200],
+                    )
+                    raise AIProviderError(
+                        f"AI provider returned unexpected HTTP error status {response.status_code}.",
+                        code="AI_PROVIDER_HTTP_ERROR",
+                        retryable=(response.status_code >= 500),
+                    )
+
+                # Parse top-level Ollama envelope
+                try:
+                    envelope = json.loads(raw_content.decode("utf-8", errors="replace"))
+                except Exception as exc:
+                    raise AIProviderFormatError(
+                        "AI provider returned non-JSON HTTP response body."
+                    ) from exc
+            finally:
+                await response.aclose()
 
             message = envelope.get("message", {})
             content_str = message.get("content", "")
@@ -336,6 +368,10 @@ def get_ai_provider_client(
     ).lower()
 
     if provider_name == "mock":
+        if settings.SCORVA_ENV.lower() == "production":
+            raise AIProviderConfigError(
+                "Mock AI provider is strictly prohibited in production environments."
+            )
         return MockAIProviderClient()
 
     if provider_name == "ollama":

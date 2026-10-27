@@ -175,7 +175,7 @@ The testing pyramid is organized into 5 distinct layers:
   - Redirect loop protection (max 3 redirects).
   - End-to-end ingestion pipeline (resolve SHA $\rightarrow$ download $\rightarrow$ extract $\rightarrow$ index evidence).
 
-### Layer 5: AI Provider Abstraction & Output Validation Tests (Milestone 4 — Verified: 42/42 Passing)
+### Layer 5: AI Provider Abstraction & Output Validation Tests (Milestone 4 — Remediated & Verified: 52/52 Passing)
 
 - **`test_ssrf_guard.py` (6/6 passing):**
   - Public unicast IP validation matrix (blocking RFC 1918, loopbacks, link-local, carrier-grade NAT, cloud metadata 169.254.169.254).
@@ -183,16 +183,33 @@ The testing pyramid is organized into 5 distinct layers:
   - Profile B internal AI endpoint validation (`ALLOWED_INTERNAL_AI_HOSTS`, allowed ports, port scanning prevention for ports 5432, 6379, 22, 8000).
   - Live TCP integration test with `ProfileBAsyncHTTPTransport` verifying immediate rejection of HTTP 302 redirects with `AI_PROVIDER_REDIRECT_DISALLOWED`.
   - Live TCP loopback communication over pinned IP socket.
-- **`test_ai_provider.py` (12/12 passing):**
+- **`test_ai_provider.py` (22/22 passing):**
   - `AIProviderClient` protocol runtime adherence for `MockAIProviderClient` and `OllamaProviderClient`.
   - Deterministic offline mock execution with zero network and zero credentials.
   - Live TCP integration tests for Ollama /api/chat request formatting, stream closure, response parsing, and error encapsulation.
-  - Bounded timeout handling (`AIProviderTimeoutError`) and oversized response ceiling enforcement (`AIProviderResponseSizeError`).
-  - Centralized effective configuration resolution (`ai_default_provider`).
-  - Bounded single retry pipeline with schema correction and temperature 0.0.
-  - Prohibition of retrying security policy violations (Profile B SSRF).
+  - SEC-M4-01 Incremental chunk streaming and real-time response size bounding:
+    - Multi-chunk streaming within byte limits.
+    - Multi-chunk streaming exceeding limit aborts immediately (`AIProviderResponseSizeError`).
+    - Responses without `Content-Length` headers bounded cumulatively.
+    - Early rejection on oversized `Content-Length` headers.
+  - SEC-M4-02 Production mock guard:
+    - Factory raises `AIProviderConfigError` when `ai_default_provider = "mock"` and `SCORVA_ENV == "production"`.
+    - Normal operation in development/test environments.
+  - SEC-M4-03 ElementTree XML attribute escaping in `<METADATA>` and `<INVENTORY>`.
+  - SEC-M4-05 Decoupled timeout and network error handling:
+    - `AIProviderTimeoutError` immediately raises without retrying or sending schema prompts (1 call, 0 retries).
+    - `AIProviderConnectionError` immediately raises without schema retries (1 call, 0 retries).
+    - `AIProviderFormatError` retries at most once for recoverable parse errors.
 - **`test_prompt_injection_resilience.py` (24/24 passing):**
   - 20 distinct adversarial prompt injection vectors: delimiter breakout, instruction override, fake system messages, jailbreak, roleplay, base64, hex, rot13, secret probes, markdown breakout, XML CDATA, criterion hallucination, numerical score bounds, duplicate criteria, criterion omission, RBAC escalation, tool call injection, system prefix spoofing, fabricated citations, missing evidence score inflation.
+  - SEC-M4-04 Downstream output validation assertions on vectors 04 through 10:
+    - Vector 04: Unconstrained score 100 rejected with `SCORE_OUT_OF_BOUNDS`.
+    - Vector 05: Extra conversational fields (`bedtime_story`) rejected with `SCHEMA_VALIDATION_ERROR`.
+    - Vector 06: Decoded base64 criterion injection rejected with `UNKNOWN_CRITERIA_DETECTED`.
+    - Vector 07: Fabricated hex-named file citation rejected with `FABRICATED_CITATION_FILE`.
+    - Vector 08: Missing evidence rule violation rejected with `MISSING_EVIDENCE_SCORE_MISMATCH`.
+    - Vector 09: Secret extraction extra fields rejected with `SCHEMA_VALIDATION_ERROR`.
+    - Vector 10: Truncated breakout JSON missing criteria rejected with `SCHEMA_VALIDATION_ERROR`.
   - Structural schema and numerical edge cases: rejection of NaN, Infinity, -Infinity, inverted line ranges (`start_line > end_line`), line range overflows, and extra unapproved JSON fields (`extra="forbid"`).
 
 ### Layer 6: Worker Orchestration, Fencing & Fault-Tolerance Tests (Milestone 5 — Planned)

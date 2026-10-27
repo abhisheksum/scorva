@@ -36,10 +36,11 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // If already authenticated, redirect to /admin
+  // If already authenticated, redirect to user default destination
   useEffect(() => {
     if (user) {
-      router.push('/admin');
+      const destination = user.routing?.default_destination || (user.platform_role ? '/admin' : '/participant');
+      router.push(destination);
     }
   }, [user, router]);
 
@@ -56,7 +57,8 @@ function LoginForm() {
     setIsSubmitting(true);
 
     try {
-      const response = await api.login(email.trim(), password);
+      const redirectParam = searchParams.get('redirect') || searchParams.get('return_to') || undefined;
+      const response = await api.login(email.trim(), password, redirectParam);
 
       if (response.mfa_required) {
         if (!response.enrolled && response.enrollment_token) {
@@ -77,7 +79,10 @@ function LoginForm() {
         } else {
           await refreshUser();
         }
-        router.push('/admin');
+        const target = ('default_destination' in response && response.default_destination)
+          ? response.default_destination
+          : (('user' in response && response.user?.routing?.default_destination) || '/participant');
+        router.push(target);
       }
     } catch (err: unknown) {
       if (err instanceof ApiClientError) {
@@ -103,7 +108,8 @@ function LoginForm() {
     try {
       const authRes = await api.verifyMfa(token, totpCode.trim());
       await refreshUser(authRes.user);
-      router.push('/admin');
+      const target = authRes.default_destination || authRes.user?.routing?.default_destination || '/admin';
+      router.push(target);
     } catch (err: unknown) {
       if (err instanceof ApiClientError) {
         setError(err.message);
@@ -224,7 +230,7 @@ function LoginForm() {
               {/* Development presets helper */}
               <div className="pt-3 border-t border-surface-border">
                 <div className="text-[11px] text-text-muted mb-2 font-medium">
-                  Development Test Accounts (Password: <code className="text-primary font-mono font-semibold">Password123!</code>):
+                  Development Quick-Login Personas (Password: <code className="text-primary font-mono font-semibold">Password123!</code>):
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <button
@@ -237,26 +243,50 @@ function LoginForm() {
                     className="p-2 text-left bg-surface-elevated hover:bg-surface-border/50 border border-surface-border rounded-lg transition-colors cursor-pointer"
                   >
                     <div className="font-medium text-text-primary truncate">admin@scorva.io</div>
-                    <div className="text-[10px] text-text-muted mt-0.5">First-Login MFA Setup</div>
+                    <div className="text-[10px] text-primary mt-0.5">Super Admin (Direct Login)</div>
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setEmail('owner@scorva.io');
+                      setEmail('organizer@scorva.io');
                       setPassword('Password123!');
                       setError(null);
                     }}
                     className="p-2 text-left bg-surface-elevated hover:bg-surface-border/50 border border-surface-border rounded-lg transition-colors cursor-pointer"
                   >
-                    <div className="font-medium text-text-primary truncate">owner@scorva.io</div>
-                    <div className="text-[10px] text-text-muted mt-0.5">Pre-enrolled MFA</div>
+                    <div className="font-medium text-text-primary truncate">organizer@scorva.io</div>
+                    <div className="text-[10px] text-text-muted mt-0.5">Tenant Organizer</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('judge@scorva.io');
+                      setPassword('Password123!');
+                      setError(null);
+                    }}
+                    className="p-2 text-left bg-surface-elevated hover:bg-surface-border/50 border border-surface-border rounded-lg transition-colors cursor-pointer"
+                  >
+                    <div className="font-medium text-text-primary truncate">judge@scorva.io</div>
+                    <div className="text-[10px] text-text-muted mt-0.5">Assigned Judge</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('participant@scorva.io');
+                      setPassword('Password123!');
+                      setError(null);
+                    }}
+                    className="p-2 text-left bg-surface-elevated hover:bg-surface-border/50 border border-surface-border rounded-lg transition-colors cursor-pointer"
+                  >
+                    <div className="font-medium text-text-primary truncate">participant@scorva.io</div>
+                    <div className="text-[10px] text-text-muted mt-0.5">Team Participant</div>
                   </button>
                 </div>
               </div>
 
               <div className="pt-2 text-center">
                 <p className="text-[11px] text-text-muted">
-                  Strictly restricted to authorized Scorva platform administrators. All access attempts are recorded in immutable audit logs.
+                  Scorva platform authentication gateway. Direct Super Admin access enabled for development.
                 </p>
               </div>
             </form>

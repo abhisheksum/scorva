@@ -12,6 +12,7 @@ from decimal import Decimal
 import json
 from typing import Any, Dict, List, Optional
 import uuid
+import xml.etree.ElementTree as ET
 
 from apps.api.modules.evaluations.evidence_indexer import EvidenceIndex, sanitize_xml_text
 from apps.api.modules.evaluations.output_validator import AIEvaluationOutputPayload
@@ -80,16 +81,22 @@ def compile_evaluation_prompt(
     evidence_parts: List[str] = []
     current_chars = 0
 
-    # Summary statistics
-    evidence_parts.append(
-        f'<METADATA team="{team_name}" commit="{commit_sha}" branch="{target_branch}" '
-        f'total_loc="{evidence_index.total_lines_of_code}" has_tests="{evidence_index.has_automated_tests}" />'
-    )
+    # Summary statistics with safe XML attribute serialization
+    meta_elem = ET.Element("METADATA")
+    meta_elem.set("team", sanitize_xml_text(str(team_name)))
+    meta_elem.set("commit", sanitize_xml_text(str(commit_sha)))
+    meta_elem.set("branch", sanitize_xml_text(str(target_branch)))
+    meta_elem.set("total_loc", str(evidence_index.total_lines_of_code))
+    meta_elem.set("has_tests", str(evidence_index.has_automated_tests).lower())
+    evidence_parts.append(ET.tostring(meta_elem, encoding="unicode"))
 
-    # File inventory categorized
+    # File inventory categorized with safe XML attribute serialization
     doc_files = ", ".join(evidence_index.documentation_files) or "None"
     build_files = ", ".join(evidence_index.build_files) or "None"
-    evidence_parts.append(f'<INVENTORY docs="{sanitize_xml_text(doc_files)}" build="{sanitize_xml_text(build_files)}" />')
+    inv_elem = ET.Element("INVENTORY")
+    inv_elem.set("docs", sanitize_xml_text(doc_files))
+    inv_elem.set("build", sanitize_xml_text(build_files))
+    evidence_parts.append(ET.tostring(inv_elem, encoding="unicode"))
 
     # Priority 1: Documentation files (README, etc.)
     for path in evidence_index.documentation_files:

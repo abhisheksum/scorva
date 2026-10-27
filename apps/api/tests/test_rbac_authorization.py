@@ -90,7 +90,10 @@ async def test_authorized_roles_allowed(client: AsyncClient, db_session, create_
         cookies={settings.SESSION_COOKIE_NAME: token},
     )
     assert res.status_code == 200
-    assert isinstance(res.json(), list)
+    data = res.json()
+    assert isinstance(data, dict)
+    assert "items" in data
+    assert isinstance(data["items"], list)
 
 
 @pytest.mark.asyncio

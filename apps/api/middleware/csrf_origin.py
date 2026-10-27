@@ -18,6 +18,10 @@ class CsrfOriginMiddleware(BaseHTTPMiddleware):
         if request.method in _SAFE_METHODS:
             return await call_next(request)
 
+        # Webhook receivers authenticate via cryptographic signatures (HMAC-SHA256) rather than browser origins/cookies
+        if "/webhook" in request.url.path:
+            return await call_next(request)
+
         # Only apply strict CSRF checks if a session cookie is present on a protected mutation
         has_session_cookie = settings.SESSION_COOKIE_NAME in request.cookies
         is_auth_ceremony = (

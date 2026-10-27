@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import List, Optional
 import uuid
 from pydantic import BaseModel, EmailStr, Field
+from apps.api.modules.auth.schemas import UserResponse
 from apps.api.modules.users.models import PlatformRole
 
 
@@ -19,3 +20,12 @@ class UserStatusUpdateRequest(BaseModel):
 class UserRoleUpdateRequest(BaseModel):
     platform_role: Optional[PlatformRole]
     reason: Optional[str] = Field(None, max_length=500)
+
+
+class PaginatedUsersResponse(BaseModel):
+    items: List[UserResponse]
+    total: int
+    page: int
+    limit: int
+    total_pages: int
+

@@ -30,21 +30,15 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onOpenMobileMenu }) =>
   const [tenantSwitcherOpen, setTenantSwitcherOpen] = useState(false);
   const [recentOrgs, setRecentOrgs] = useState<OrganizationSummaryResponse[]>([]);
 
-  useEffect(() => {
-    let isMounted = true;
-    async function fetchSampleOrgs() {
-      try {
-        const res = await api.getAdminOrganizations({ limit: 5, sort_by: 'created_at', sort_order: 'desc' });
-        if (isMounted) setRecentOrgs(res.items);
-      } catch {
-        // Ignored in header
-      }
+  const handleToggleTenantSwitcher = () => {
+    const nextState = !tenantSwitcherOpen;
+    setTenantSwitcherOpen(nextState);
+    if (nextState && recentOrgs.length === 0) {
+      api.getAdminOrganizations({ limit: 5, sort_by: 'created_at', sort_order: 'desc' })
+        .then((res) => setRecentOrgs(res.items))
+        .catch(() => {});
     }
-    fetchSampleOrgs();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  };
 
   const getBreadcrumbs = () => {
     const segments = pathname.split('/').filter(Boolean);
@@ -115,7 +109,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onOpenMobileMenu }) =>
         <div className="relative">
           <button
             type="button"
-            onClick={() => setTenantSwitcherOpen(!tenantSwitcherOpen)}
+            onClick={handleToggleTenantSwitcher}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-text-primary bg-surface-elevated hover:bg-surface-hover border border-surface-border rounded-lg transition-colors"
             title="Switch to Tenant Organization Workspace"
           >
@@ -181,7 +175,7 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onOpenMobileMenu }) =>
           title="Search organizations, users, jobs (⌘K)"
         >
           <Search className="w-3.5 h-3.5" />
-          <span>Quick search...</span>
+          <span className="truncate max-w-[200px] lg:max-w-none">Search organizations, users, hackathons...</span>
           <kbd className="px-1.5 py-0.5 text-[10px] bg-surface rounded border border-surface-border text-text-muted">
             ⌘K
           </kbd>

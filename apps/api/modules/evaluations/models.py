@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -143,6 +144,18 @@ class Submission(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="pending"
     )
+    repository_owner: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    repository_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    default_branch: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    verified_commit_sha: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    connection_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="unverified", default="unverified"
+    )
+    verified_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verification_diagnostic: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    verification_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -178,6 +191,9 @@ class Submission(Base):
     )
     evaluation_jobs: Mapped[List["EvaluationJob"]] = relationship(
         "EvaluationJob", back_populates="submission"
+    )
+    judge_reviews: Mapped[List["JudgeReview"]] = relationship(
+        "JudgeReview", back_populates="submission"
     )
 
 
@@ -445,6 +461,26 @@ class EvaluationJob(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancellation_requested: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    idempotency_key: Mapped[Optional[str]] = mapped_column(
+        String(128), nullable=True
+    )
+    request_fingerprint: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    reevaluation_of_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evaluation_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    dispatch_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -468,6 +504,19 @@ class EvaluationJob(Base):
         ),
         Index("idx_eval_jobs_status_heartbeat", "status", "last_heartbeat_at"),
         Index("idx_eval_jobs_org_hack", "organization_id", "hackathon_id"),
+        Index(
+            "uq_eval_jobs_organization_idempotency_key",
+            "organization_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
+        Index(
+            "ix_eval_jobs_reevaluation_of",
+            "reevaluation_of_job_id",
+            unique=False,
+            postgresql_where=text("reevaluation_of_job_id IS NOT NULL"),
+        ),
     )
 
     submission: Mapped["Submission"] = relationship(
@@ -481,6 +530,114 @@ class EvaluationJob(Base):
         back_populates="job",
         foreign_keys="EvaluationResult.job_id",
         cascade="all, delete-orphan",
+    )
+    outbox_entries: Mapped[List["EvaluationJobOutbox"]] = relationship(
+        "EvaluationJobOutbox",
+        back_populates="job",
+        cascade="all, delete-orphan",
+    )
+    reevaluation_parent: Mapped[Optional["EvaluationJob"]] = relationship(
+        "EvaluationJob",
+        remote_side="EvaluationJob.id",
+        foreign_keys=[reevaluation_of_job_id],
+    )
+
+
+class EvaluationJobOutbox(Base):
+    """
+    Subsystem C: Transactional Outbox for reliable asynchronous evaluation dispatch.
+    Committed atomically with evaluation_jobs in the same database transaction.
+    """
+    __tablename__ = "evaluation_job_outbox"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    job_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evaluation_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    queue_name: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="evaluations.default"
+    )
+    routing_key: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="evaluations.default"
+    )
+    payload: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending"
+    )
+    relay_claim_token: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    relay_claimed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    relay_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    retry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    claim_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    publish_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    dispatch_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1
+    )
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dead_lettered_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    dead_letter_reason: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'delivered', 'dead_lettered')",
+            name="chk_outbox_status",
+        ),
+        Index(
+            "uq_eval_job_outbox_active_dispatch",
+            "job_id",
+            unique=True,
+            postgresql_where=text("status IN ('pending', 'processing')"),
+        ),
+        Index(
+            "ix_eval_job_outbox_claimable",
+            "status",
+            "claim_count",
+            "relay_expires_at",
+            "id",
+            postgresql_where=text("dead_lettered_at IS NULL AND processed_at IS NULL"),
+        ),
+        Index(
+            "ix_eval_job_outbox_quarantine",
+            "id",
+            postgresql_where=text("status = 'processing' AND claim_count >= 5 AND dead_lettered_at IS NULL"),
+        ),
+    )
+
+    job: Mapped["EvaluationJob"] = relationship(
+        "EvaluationJob", back_populates="outbox_entries"
     )
 
 
@@ -645,7 +802,7 @@ class EvidenceReference(Base):
 
 
 class JudgeReview(Base):
-    """Subsystem C: Human judge override and decision record."""
+    """Subsystem C: Independent human judge review, scoring, and feedback record."""
     __tablename__ = "judge_reviews"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -657,9 +814,21 @@ class JudgeReview(Base):
         nullable=False,
         index=True,
     )
-    evaluation_result_id: Mapped[uuid.UUID] = mapped_column(
+    hackathon_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("evaluation_results.id", ondelete="RESTRICT"),
+        ForeignKey("hackathons.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("submissions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    rubric_version_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("rubric_versions.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )
@@ -669,14 +838,29 @@ class JudgeReview(Base):
         nullable=False,
         index=True,
     )
-    original_score: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False
+    evaluation_result_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evaluation_results.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
-    adjusted_score: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="draft", default="draft"
     )
-    overall_feedback: Mapped[str] = mapped_column(Text, nullable=False)
-    decision: Mapped[str] = mapped_column(String(20), nullable=False)
+    score: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    original_score: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    adjusted_score: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    overall_feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    decision: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1", default=1
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -686,16 +870,38 @@ class JudgeReview(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         CheckConstraint(
-            "decision IN ('accepted', 'adjusted', 'rejected')",
+            "decision IS NULL OR decision IN ('accepted', 'adjusted', 'rejected')",
             name="chk_judge_reviews_decision",
         ),
+        CheckConstraint(
+            "status IN ('draft', 'submitted')",
+            name="chk_judge_reviews_status",
+        ),
+        UniqueConstraint(
+            "submission_id", "judge_user_id",
+            name="uq_judge_reviews_submission_judge",
+        ),
+        Index("ix_judge_reviews_hackathon_status", "hackathon_id", "status"),
+        Index("ix_judge_reviews_submission_status", "submission_id", "status"),
     )
 
-    evaluation_result: Mapped["EvaluationResult"] = relationship(
+    evaluation_result: Mapped[Optional["EvaluationResult"]] = relationship(
         "EvaluationResult", back_populates="judge_reviews"
+    )
+    submission: Mapped["Submission"] = relationship(
+        "Submission", back_populates="judge_reviews"
+    )
+    rubric_version: Mapped["RubricVersion"] = relationship(
+        "RubricVersion"
+    )
+    judge_user: Mapped["User"] = relationship(
+        "User"
     )
     criterion_scores: Mapped[List["JudgeCriterionScore"]] = relationship(
         "JudgeCriterionScore",
@@ -705,7 +911,7 @@ class JudgeReview(Base):
 
 
 class JudgeCriterionScore(Base):
-    """Subsystem C: Criterion-level adjustments by human judge with mandatory written rationale."""
+    """Subsystem C: Criterion-level scoring and feedback by human judge."""
     __tablename__ = "judge_criterion_scores"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -723,16 +929,29 @@ class JudgeCriterionScore(Base):
         nullable=False,
         index=True,
     )
-    original_awarded_score: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False
+    score: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
     )
-    adjusted_awarded_score: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False
+    original_awarded_score: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
     )
-    judge_notes: Mapped[str] = mapped_column(Text, nullable=False)
+    adjusted_awarded_score: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    judge_notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "judge_review_id", "criterion_id",
+            name="uq_judge_criterion_scores_review_criterion",
+        ),
+    )
 
     judge_review: Mapped["JudgeReview"] = relationship(
         "JudgeReview", back_populates="criterion_scores"
+    )
+    criterion: Mapped["RubricCriterion"] = relationship(
+        "RubricCriterion"
     )
 
 
@@ -839,4 +1058,94 @@ class HackathonJudge(Base):
         UniqueConstraint(
             "hackathon_id", "user_id", name="uq_hackathon_judges_hackathon_user"
         ),
+    )
+
+
+class GitHubEvent(Base):
+    """
+    Subsystem C: Durable repository activity and webhook delivery event store.
+    Provides idempotent deduplication, provenance tracking, and project activity timelines.
+    """
+    __tablename__ = "github_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    delivery_id: Mapped[str] = mapped_column(
+        String(100), unique=True, nullable=False, index=True
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, index=True
+    )
+    action: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )
+    organization_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    hackathon_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("hackathons.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    submission_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("submissions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    repository_owner: Mapped[str] = mapped_column(
+        String(150), nullable=False
+    )
+    repository_name: Mapped[str] = mapped_column(
+        String(150), nullable=False
+    )
+    canonical_repo_id: Mapped[str] = mapped_column(
+        String(300), nullable=False, index=True
+    )
+    ref: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    commit_sha: Mapped[Optional[str]] = mapped_column(
+        String(40), nullable=True
+    )
+    sender_login: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+    summary: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True
+    )
+    details: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="received", index=True
+    )
+    diagnostic_code: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True
+    )
+    event_timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('received', 'processed', 'ignored', 'failed')",
+            name="chk_github_events_status",
+        ),
+        Index("ix_github_events_org_hack_sub", "organization_id", "hackathon_id", "submission_id"),
+        Index("ix_github_events_repo_timestamp", "canonical_repo_id", "event_timestamp"),
     )

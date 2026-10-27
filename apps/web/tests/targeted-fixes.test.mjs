@@ -99,3 +99,28 @@ test('Fix 2 & 3: ApiClientError handles REQUEST_ABORTED and passes options.signa
   assert.ok(clientContent.includes("'REQUEST_ABORTED'"), 'ApiClientError must throw REQUEST_ABORTED when signal is aborted');
   assert.ok(clientContent.includes('options?: RequestInit'), 'Client methods must accept optional RequestInit options');
 });
+
+test('Users & Access Admin: UsersPage implements server pagination, AbortController, and debounced filters', () => {
+  const usersPagePath = path.join(WEB_ROOT, 'app/admin/users/page.tsx');
+  const content = fs.readFileSync(usersPagePath, 'utf8');
+
+  // Verify AbortController usage
+  assert.ok(content.includes('new AbortController()'), 'UsersPage must use AbortController');
+  assert.ok(content.includes('abortControllerRef.current.abort()'), 'UsersPage must cancel in-flight queries');
+
+  // Verify pagination state and UI controls
+  assert.ok(content.includes('totalPages'), 'UsersPage must handle totalPages');
+  assert.ok(content.includes('limit'), 'UsersPage must configure a query limit');
+  assert.ok(content.includes('ChevronLeft'), 'UsersPage must have previous page button');
+  assert.ok(content.includes('ChevronRight'), 'UsersPage must have next page button');
+
+  // Verify server-side paginated API call
+  assert.ok(content.includes('api.getUsers'), 'UsersPage must call api.getUsers');
+  assert.ok(content.includes('signal'), 'UsersPage must pass abort signal to api.getUsers');
+
+  // Verify PaginatedUsersResponse in types
+  const apiTypesPath = path.join(WEB_ROOT, 'types/api.ts');
+  const apiTypesContent = fs.readFileSync(apiTypesPath, 'utf8');
+  assert.ok(apiTypesContent.includes('interface PaginatedUsersResponse'), 'types/api.ts must define PaginatedUsersResponse');
+});
+

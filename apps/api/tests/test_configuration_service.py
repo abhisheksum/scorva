@@ -206,3 +206,35 @@ async def test_unauthorized_override_rejection(db_session: AsyncSession, create_
             actor=admin,
         )
     assert "not permitted" in str(exc_info.value).lower()
+
+
+@pytest.mark.asyncio
+async def test_ai_provider_setting_validation_and_production_guard(monkeypatch):
+    """
+    SEC-M4-02: Verifies ai.default_provider accepts only 'ollama' and 'mock',
+    and strictly forbids 'mock' when SCORVA_ENV == 'production'.
+    """
+    from apps.api.config import settings
+
+    # In test/dev environment:
+    assert validate_and_parse_setting_value("ai.default_provider", "ollama", "string") == "ollama"
+    assert validate_and_parse_setting_value("ai.default_provider", "OLLAMA", "string") == "ollama"
+    assert validate_and_parse_setting_value("ai.default_provider", "mock", "string") == "mock"
+
+    # Unsupported provider names must be rejected with 422
+    with pytest.raises(Exception) as exc_unsupported:
+        validate_and_parse_setting_value("ai.default_provider", "openai", "string")
+    assert "only supports 'ollama' or 'mock'" in str(exc_unsupported.value)
+
+    with pytest.raises(Exception) as exc_anthropic:
+        validate_and_parse_setting_value("ai.default_provider", "anthropic", "string")
+    assert "only supports 'ollama' or 'mock'" in str(exc_anthropic.value)
+
+    # In production environment: 'mock' must be strictly forbidden with 403
+    monkeypatch.setattr(settings, "SCORVA_ENV", "production")
+    with pytest.raises(Exception) as exc_prod:
+        validate_and_parse_setting_value("ai.default_provider", "mock", "string")
+    assert "Mock AI provider is strictly prohibited in production" in str(exc_prod.value)
+
+    # 'ollama' remains allowed in production
+    assert validate_and_parse_setting_value("ai.default_provider", "ollama", "string") == "ollama"

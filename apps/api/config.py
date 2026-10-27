@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     SESSION_COOKIE_SECURE: bool = False
     SESSION_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 
+    # GitHub Webhook Configuration
+    GITHUB_WEBHOOK_SECRET: str = "scorva-dev-webhook-secret-change-in-prod"
+    GITHUB_WEBHOOK_MAX_BYTES: int = 5 * 1024 * 1024  # 5 MB max body size
+
     # MFA Configuration
     MFA_ENROLLMENT_TTL_SECONDS: int = 600
     MFA_CHALLENGE_TTL_SECONDS: int = 300
@@ -81,6 +85,8 @@ class Settings(BaseSettings):
                 )
             if "scorva_dev_password" in self.DATABASE_URL:
                 raise ValueError("DATABASE_URL must not use the default development password in production.")
+            if len(self.GITHUB_WEBHOOK_SECRET) < 16 or "scorva-dev-webhook-secret" in self.GITHUB_WEBHOOK_SECRET:
+                raise ValueError("GITHUB_WEBHOOK_SECRET must be configured securely in production.")
             for origin in self.CORS_ORIGINS:
                 if origin == "*":
                     raise ValueError("CORS_ORIGINS must not use wildcard '*' when credentials are supported.")

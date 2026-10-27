@@ -245,32 +245,38 @@ flowchart LR
 
 ---
 
-### Milestone 4: Provider-Neutral AI Engine & Structured Output Validation (COMPLETED)
+### Milestone 4: Provider-Neutral AI Engine & Structured Output Validation (COMPLETED & REMEDIATED)
 
 - **Objective:** Implement a provider-agnostic LLM interface, local Ollama client, hardened segmented SSRF defense, adversarial prompt assembly, and strict JSON Schema output validation.
-- **Status:** **Completed & Verified**
+- **Status:** **Completed, Remediated & Verified**
 - **Non-Goals (Enforced):** No Celery task queue wiring; no human judge overrides.
 - **Deliverables:**
-  - `AIProviderClient` protocol and `OllamaProviderClient` adapter (`apps/api/modules/evaluations/ai_provider.py`).
+  - `AIProviderClient` protocol and `OllamaProviderClient` adapter (`apps/api/modules/evaluations/ai_provider.py`):
+    - True incremental chunk streaming (`resp.aiter_bytes()`) with cumulative byte limits and early `Content-Length` validation.
+    - Production mock guard preventing canned mock evaluation in production environments.
   - `MockAIProviderClient` for deterministic, zero-cost CI test suite execution.
   - Segmented SSRF Defense Architecture (`apps/api/core/ssrf_guard.py`):
     - **Profile A (Public Web Egress — GitHub Archive Downloads):** Enforces public IP resolution, blocks all private/loopback/link-local/metadata CIDRs (`169.254.169.254`), pins IPs, enforces port 443 strictly, and re-validates redirects.
     - **Profile B (Internal Inference Egress — AI Providers):** Bound strictly to administrator-configured endpoints (`settings.OLLAMA_BASE_URL`). Validates against explicit internal allowlist (`ALLOWED_INTERNAL_AI_HOSTS = {"ollama", "localhost", "127.0.0.1"}`). Disallows arbitrary user-supplied endpoints. Enforces allowed ports (`11434`, `443`), forbids internal infrastructure ports (5432, 6379, 22, 8000), enforces `follow_redirects=False` with immediate rejection of 3xx redirect status via `ProfileBAsyncHTTPTransport`.
   - Adversarial Prompt Compiler (`apps/api/modules/evaluations/prompt_compiler.py`):
-    - Strict structural XML fencing (`<UNTRUSTED_REPOSITORY_EVIDENCE>`) isolating repository files from system instructions with ElementTree escaping.
+    - Strict structural XML fencing (`<UNTRUSTED_REPOSITORY_EVIDENCE>`) isolating repository files from system instructions with ElementTree attribute escaping.
+    - Safe attribute serialization for `<METADATA>` and `<INVENTORY>` tags preventing breakout.
     - System prompt priming instructing model to ignore embedded instructions.
   - Structured Output Validator (`apps/api/modules/evaluations/output_validator.py`):
     - Validates model output against Pydantic schema `AIEvaluationOutputPayload`.
     - Bounds checking: Asserts awarded scores satisfy $min_i \le S_i \le max_i$. Rejects NaN and Infinity.
     - Criterion presence: Asserts all criteria from frozen rubric version are assessed with zero duplicates or unknown criteria.
     - Citation verification: Cross-checks cited `file_path` and line numbers against evaluated evidence index.
-    - Validation failure handling: If model output is malformed, retries once with temperature 0.0; if retry fails, marks evaluation failed with `EVAL_PARSE_ERROR` without accepting partial or hallucinated scores.
+    - Validation failure handling: If model output is malformed, retries at most once for recoverable schema parse failures; decoupled timeouts and network transport errors propagate directly without triggering schema retries.
     - Missing evidence handling: If evidence is absent, assigns `min_score`, sets `evidence_status = 'missing'`, and outputs explicit reason `"NO_VERIFIABLE_EVIDENCE"`.
+- **Security Remediation Audit:** Remediated findings SEC-M4-01 through SEC-M4-05 documented in `docs/PHASE_4_M4_BOUNDED_REMEDIATION_REPORT.md`.
 - **Verification Commands:**
   - `.venv/bin/pytest apps/api/tests/test_ssrf_guard.py -v` (6/6 passed)
-  - `.venv/bin/pytest apps/api/tests/test_ai_provider.py -v` (12/12 passed)
+  - `.venv/bin/pytest apps/api/tests/test_ai_provider.py -v` (22/22 passed)
   - `.venv/bin/pytest apps/api/tests/test_prompt_injection_resilience.py -v` (24/24 passed)
-- **Stop Condition:** Provider abstraction handles timeouts, malformed outputs, and adversarial injection attempts cleanly without crashing or executing injected instructions. (Verified: 42/42 passing).
+  - `.venv/bin/pytest apps/api/tests/test_configuration_service.py -v` (7/7 passed)
+  - Full backend test suite: 279/279 passed.
+- **Stop Condition:** Provider abstraction handles timeouts, malformed outputs, and adversarial injection attempts cleanly without crashing or executing injected instructions. Milestone 5 remains BLOCKED pending independent audit review.
 
 ---
 

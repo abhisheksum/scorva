@@ -5,7 +5,11 @@ import {
   MfaSetupResponse,
   AuthSuccessResponse,
   UserProfile,
+  PaginatedUsersResponse,
+  DashboardOverviewResponse,
+  DashboardTrendsResponse,
   AuditEventsResponse,
+  ConfigurationSetting,
   OrganizationStatus,
   OrgRole,
   OrganizationDetailResponse,
@@ -28,6 +32,38 @@ import {
   UpdateHackathonRequest,
   AdminUpdateHackathonStatusRequest,
   TenantUpdateHackathonStatusRequest,
+  HackathonOverviewResponse,
+  TeamListItem,
+  TeamDetailResponse,
+  CreateTeamRequest,
+  JoinTeamRequest,
+  SubmissionListItem,
+  SubmissionDetailResponse,
+  CreateSubmissionRequest,
+  JudgeListItem,
+  AssignJudgeRequest,
+  RubricDetailResponse,
+  CreateRubricRequest,
+  AddCriterionRequest,
+  ValidateRepositoryRequest,
+  RepositoryValidationResult,
+  LinkRepositoryRequest,
+  UpdateBranchRequest,
+  RepositoryActivityItem,
+  SubmissionEvaluationTransparencyResponse,
+  HackathonEvaluationSummaryResponse,
+  EvaluationJobListItem,
+  EvaluationJobResponse,
+  JudgeAssignmentItem,
+  JudgeQueueItem,
+  JudgeSubmissionReviewResponse,
+  SaveJudgeReviewRequest,
+  SubmitJudgeReviewRequest,
+  JudgeReviewDetail,
+  OrganizerReviewProgressResponse,
+  SubmissionReviewsResponse,
+  JudgeHackathonDetail,
+  ParticipantTeamItem,
 } from '@/types/api';
 
 const API_BASE_URL =
@@ -152,36 +188,54 @@ export const api = {
   },
 
   // Auth
-  login: async (email: string, password: string): Promise<LoginResponse> => {
-    return fetchApi<LoginResponse>('/api/v1/admin/auth/login', {
+  login: async (email: string, password: string, redirectUrl?: string): Promise<LoginResponse> => {
+    return fetchApi<LoginResponse>('/api/v1/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, redirect_url: redirectUrl }),
     });
   },
   setupMfa: async (enrollmentToken: string): Promise<MfaSetupResponse> => {
-    return fetchApi<MfaSetupResponse>('/api/v1/admin/auth/mfa/setup', {
+    return fetchApi<MfaSetupResponse>('/api/v1/auth/mfa/setup', {
       method: 'POST',
       body: JSON.stringify({ enrollment_token: enrollmentToken }),
     });
   },
   verifyMfa: async (token: string, totpCode: string): Promise<AuthSuccessResponse> => {
-    return fetchApi<AuthSuccessResponse>('/api/v1/admin/auth/mfa/verify', {
+    return fetchApi<AuthSuccessResponse>('/api/v1/auth/mfa/verify', {
       method: 'POST',
       body: JSON.stringify({ token, totp_code: totpCode }),
     });
   },
   getMe: async (): Promise<UserProfile> => {
-    return fetchApi<UserProfile>('/api/v1/admin/auth/me');
+    return fetchApi<UserProfile>('/api/v1/auth/me');
   },
   logout: async (): Promise<{ message: string }> => {
-    return fetchApi<{ message: string }>('/api/v1/admin/auth/logout', {
+    return fetchApi<{ message: string }>('/api/v1/auth/logout', {
       method: 'POST',
     });
   },
 
   // Users Directory & Session Revocation
-  getUsers: async (): Promise<UserProfile[]> => {
-    return fetchApi<UserProfile[]>('/api/v1/admin/users');
+  getUsers: async (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    role?: string;
+    status?: string;
+    sort_by?: string;
+    sort_order?: 'asc' | 'desc';
+  }, options?: RequestInit): Promise<PaginatedUsersResponse> => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.role) searchParams.set('role', params.role);
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+    if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+
+    const qs = searchParams.toString();
+    return fetchApi<PaginatedUsersResponse>(`/api/v1/admin/users${qs ? `?${qs}` : ''}`, options);
   },
   updateUserStatus: async (userId: string, isActive: boolean, reason?: string): Promise<UserProfile> => {
     return fetchApi<UserProfile>(`/api/v1/admin/users/${userId}/status`, {
@@ -218,6 +272,17 @@ export const api = {
   },
 
   // ==========================================
+  // Platform Admin: Dashboard Overview
+  getDashboardOverview: async (options?: RequestInit & { refresh?: boolean }): Promise<DashboardOverviewResponse> => {
+    const qs = options?.refresh ? '?refresh=true' : '';
+    return fetchApi<DashboardOverviewResponse>(`/api/v1/admin/dashboard/overview${qs}`, options);
+  },
+
+  getDashboardTrends: async (params?: { period?: string }, options?: RequestInit): Promise<DashboardTrendsResponse> => {
+    const qs = params?.period ? `?period=${encodeURIComponent(params.period)}` : '';
+    return fetchApi<DashboardTrendsResponse>(`/api/v1/admin/dashboard/trends${qs}`, options);
+  },
+
   // Platform Admin: Organizations
   // ==========================================
   getAdminOrganizations: async (params?: {
@@ -521,5 +586,550 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  // ==========================================
+  // Platform Admin: Configuration Settings
+  // ==========================================
+  getConfigurationSettings: async (): Promise<ConfigurationSetting[]> => {
+    return fetchApi<ConfigurationSetting[]>('/api/v1/admin/configuration');
+  },
+
+  getConfigurationSetting: async (key: string): Promise<ConfigurationSetting> => {
+    return fetchApi<ConfigurationSetting>(`/api/v1/admin/configuration/${key}`);
+  },
+
+  updateConfigurationSetting: async (
+    key: string,
+    value: string,
+    expectedVersion: number,
+    changeReason?: string
+  ): Promise<ConfigurationSetting> => {
+    return fetchApi<ConfigurationSetting>(`/api/v1/admin/configuration/${key}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        value,
+        expected_version: expectedVersion,
+        change_reason: changeReason,
+      }),
+    });
+  },
+
+  // ==========================================
+  // Phase 6 Hackathon Subresources
+  // ==========================================
+  getHackathonOverview: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<HackathonOverviewResponse> => {
+    return fetchApi<HackathonOverviewResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/overview`,
+      options
+    );
+  },
+
+  getHackathonTeams: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<TeamListItem[]> => {
+    return fetchApi<TeamListItem[]>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/teams`,
+      options
+    );
+  },
+
+  createHackathonTeam: async (
+    orgId: string,
+    hackathonId: string,
+    data: CreateTeamRequest
+  ): Promise<TeamDetailResponse> => {
+    return fetchApi<TeamDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/teams`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getHackathonTeam: async (
+    orgId: string,
+    hackathonId: string,
+    teamId: string,
+    options?: RequestInit
+  ): Promise<TeamDetailResponse> => {
+    return fetchApi<TeamDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/teams/${teamId}`,
+      options
+    );
+  },
+
+  joinHackathonTeam: async (
+    orgId: string,
+    hackathonId: string,
+    data: JoinTeamRequest
+  ): Promise<TeamDetailResponse> => {
+    return fetchApi<TeamDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/teams/join`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getHackathonSubmissions: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<SubmissionListItem[]> => {
+    return fetchApi<SubmissionListItem[]>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions`,
+      options
+    );
+  },
+
+  createHackathonSubmission: async (
+    orgId: string,
+    hackathonId: string,
+    data: CreateSubmissionRequest
+  ): Promise<SubmissionDetailResponse> => {
+    return fetchApi<SubmissionDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getHackathonSubmission: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    options?: RequestInit
+  ): Promise<SubmissionDetailResponse> => {
+    return fetchApi<SubmissionDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}`,
+      options
+    );
+  },
+
+  validateRepository: async (
+    orgId: string,
+    hackathonId: string,
+    data: ValidateRepositoryRequest
+  ): Promise<RepositoryValidationResult> => {
+    return fetchApi<RepositoryValidationResult>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/repositories/validate`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  linkSubmissionRepository: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    data: LinkRepositoryRequest
+  ): Promise<SubmissionDetailResponse> => {
+    return fetchApi<SubmissionDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/link-repository`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  updateSubmissionBranch: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    data: UpdateBranchRequest
+  ): Promise<SubmissionDetailResponse> => {
+    return fetchApi<SubmissionDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/branch`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  refreshSubmissionVerification: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string
+  ): Promise<SubmissionDetailResponse> => {
+    return fetchApi<SubmissionDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/verify`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  unlinkSubmissionRepository: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string
+  ): Promise<SubmissionDetailResponse> => {
+    return fetchApi<SubmissionDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/unlink-repository`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  getSubmissionActivity: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    options?: RequestInit
+  ): Promise<RepositoryActivityItem[]> => {
+    return fetchApi<RepositoryActivityItem[]>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/activity`,
+      options
+    );
+  },
+
+  getHackathonActivity: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<RepositoryActivityItem[]> => {
+    return fetchApi<RepositoryActivityItem[]>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/activity`,
+      options
+    );
+  },
+
+  getHackathonJudges: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<JudgeListItem[]> => {
+    return fetchApi<JudgeListItem[]>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/judges`,
+      options
+    );
+  },
+
+  assignHackathonJudge: async (
+    orgId: string,
+    hackathonId: string,
+    data: AssignJudgeRequest
+  ): Promise<JudgeListItem> => {
+    return fetchApi<JudgeListItem>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/judges`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  removeHackathonJudge: async (
+    orgId: string,
+    hackathonId: string,
+    judgeUserId: string
+  ): Promise<void> => {
+    await fetchApi<void>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/judges/${judgeUserId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  },
+
+  getHackathonRubric: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<RubricDetailResponse> => {
+    return fetchApi<RubricDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/rubric`,
+      options
+    );
+  },
+
+  createHackathonRubric: async (
+    orgId: string,
+    hackathonId: string,
+    data: CreateRubricRequest
+  ): Promise<RubricDetailResponse> => {
+    return fetchApi<RubricDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/rubrics`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  addRubricCriterion: async (
+    orgId: string,
+    hackathonId: string,
+    rubricId: string,
+    data: AddCriterionRequest
+  ): Promise<RubricDetailResponse> => {
+    return fetchApi<RubricDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/rubrics/${rubricId}/criteria`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  publishRubric: async (
+    orgId: string,
+    hackathonId: string,
+    rubricId: string
+  ): Promise<RubricDetailResponse> => {
+    return fetchApi<RubricDetailResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/rubrics/${rubricId}/publish`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  getSubmissionEvaluation: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    jobId?: string,
+    options?: RequestInit
+  ): Promise<SubmissionEvaluationTransparencyResponse> => {
+    const url = jobId
+      ? `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/evaluation?job_id=${encodeURIComponent(jobId)}`
+      : `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/evaluation`;
+    return fetchApi<SubmissionEvaluationTransparencyResponse>(url, options);
+  },
+
+  getHackathonEvaluationSummary: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<HackathonEvaluationSummaryResponse> => {
+    return fetchApi<HackathonEvaluationSummaryResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/evaluations/summary`,
+      options
+    );
+  },
+
+  getHackathonEvaluations: async (
+    orgId: string,
+    hackathonId: string,
+    status?: string,
+    options?: RequestInit
+  ): Promise<EvaluationJobListItem[]> => {
+    const url = status
+      ? `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/evaluations?status=${encodeURIComponent(status)}`
+      : `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/evaluations`;
+    return fetchApi<EvaluationJobListItem[]>(url, options);
+  },
+
+  triggerSubmissionEvaluation: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    idempotencyKey?: string
+  ): Promise<EvaluationJobResponse> => {
+    const headers: Record<string, string> = {};
+    if (idempotencyKey) {
+      headers['Idempotency-Key'] = idempotencyKey;
+    }
+    return fetchApi<EvaluationJobResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/evaluate`,
+      {
+        method: 'POST',
+        headers,
+      }
+    );
+  },
+
+  cancelEvaluationJob: async (
+    orgId: string,
+    jobId: string
+  ): Promise<EvaluationJobResponse> => {
+    return fetchApi<EvaluationJobResponse>(
+      `/api/v1/organizations/${orgId}/evaluations/${jobId}/cancel`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  // Judge Workspace & Review Workflow (M6.5)
+  getJudgeAssignments: async (
+    options?: RequestInit
+  ): Promise<JudgeAssignmentItem[]> => {
+    return fetchApi<JudgeAssignmentItem[]>('/api/v1/judge/assignments', options);
+  },
+
+  getJudgeQueue: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<JudgeQueueItem[]> => {
+    return fetchApi<JudgeQueueItem[]>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/judge/queue`,
+      options
+    );
+  },
+
+  getSubmissionReview: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    judgeId?: string,
+    options?: RequestInit
+  ): Promise<JudgeSubmissionReviewResponse> => {
+    const url = judgeId
+      ? `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/review?judge_id=${encodeURIComponent(judgeId)}`
+      : `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/review`;
+    return fetchApi<JudgeSubmissionReviewResponse>(url, options);
+  },
+
+  saveSubmissionReviewDraft: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    data: SaveJudgeReviewRequest
+  ): Promise<JudgeReviewDetail> => {
+    return fetchApi<JudgeReviewDetail>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  submitSubmissionReview: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    data: SubmitJudgeReviewRequest
+  ): Promise<JudgeReviewDetail> => {
+    return fetchApi<JudgeReviewDetail>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/review/submit`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  // Dedicated Judge Workspace & Review Endpoints (Tenant-Isolated from Org Layout)
+  getJudgeHackathonDetail: async (
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<JudgeHackathonDetail> => {
+    return fetchApi<JudgeHackathonDetail>(
+      `/api/v1/judge/hackathons/${hackathonId}`,
+      options
+    );
+  },
+
+  getJudgeHackathonSubmissions: async (
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<JudgeQueueItem[]> => {
+    return fetchApi<JudgeQueueItem[]>(
+      `/api/v1/judge/hackathons/${hackathonId}/submissions`,
+      options
+    );
+  },
+
+  getJudgeSubmissionReview: async (
+    hackathonId: string,
+    submissionId: string,
+    options?: RequestInit
+  ): Promise<JudgeSubmissionReviewResponse> => {
+    return fetchApi<JudgeSubmissionReviewResponse>(
+      `/api/v1/judge/hackathons/${hackathonId}/submissions/${submissionId}/review`,
+      options
+    );
+  },
+
+  saveJudgeSubmissionReviewDraft: async (
+    hackathonId: string,
+    submissionId: string,
+    data: SaveJudgeReviewRequest
+  ): Promise<JudgeReviewDetail> => {
+    return fetchApi<JudgeReviewDetail>(
+      `/api/v1/judge/hackathons/${hackathonId}/submissions/${submissionId}/review`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  submitJudgeSubmissionReview: async (
+    hackathonId: string,
+    submissionId: string,
+    data: SubmitJudgeReviewRequest
+  ): Promise<JudgeReviewDetail> => {
+    return fetchApi<JudgeReviewDetail>(
+      `/api/v1/judge/hackathons/${hackathonId}/submissions/${submissionId}/review/submit`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getJudgeSubmissionTransparency: async (
+    hackathonId: string,
+    submissionId: string,
+    options?: RequestInit
+  ): Promise<SubmissionEvaluationTransparencyResponse> => {
+    return fetchApi<SubmissionEvaluationTransparencyResponse>(
+      `/api/v1/judge/hackathons/${hackathonId}/submissions/${submissionId}/transparency`,
+      options
+    );
+  },
+
+  // Participant Workspace
+  getParticipantTeams: async (
+    options?: RequestInit
+  ): Promise<ParticipantTeamItem[]> => {
+    return fetchApi<ParticipantTeamItem[]>(
+      '/api/v1/participant/teams',
+      options
+    );
+  },
+
+  getHackathonReviewProgress: async (
+    orgId: string,
+    hackathonId: string,
+    options?: RequestInit
+  ): Promise<OrganizerReviewProgressResponse> => {
+    return fetchApi<OrganizerReviewProgressResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/reviews/progress`,
+      options
+    );
+  },
+
+  getSubmissionAllReviews: async (
+    orgId: string,
+    hackathonId: string,
+    submissionId: string,
+    options?: RequestInit
+  ): Promise<SubmissionReviewsResponse> => {
+    return fetchApi<SubmissionReviewsResponse>(
+      `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/reviews`,
+      options
+    );
   },
 };

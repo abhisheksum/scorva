@@ -319,6 +319,31 @@ async def check_rate_limit(
         return await _db_check_rate_limit(key, max_attempts, window_seconds)
 
 
+async def reset_rate_limit(key_prefix: str, identifier: str) -> None:
+    """
+    Clears rate limit counter (e.g. upon successful authentication).
+    Removes the key from Redis and clears any PostgreSQL fallback record.
+    """
+    key = f"rate_limit:{key_prefix}:{identifier}"
+    try:
+        client = get_redis_client()
+        await client.delete(key)
+    except _REDIS_ERRORS as exc:
+        logger.warning(f"Redis reset rate limit error: {exc}")
+
+    try:
+        from apps.api.core.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text("DELETE FROM rate_limit_buckets WHERE key = :key"),
+                {"key": key},
+            )
+            await session.commit()
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------------------------------
 # TOTP Replay Protection (Globally Consistent Across Multi-Worker Instances)
 # ------------------------------------------------------------------------------
