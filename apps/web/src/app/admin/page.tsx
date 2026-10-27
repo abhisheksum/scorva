@@ -8,12 +8,10 @@ import {
   Trophy,
   RefreshCw,
   Clock,
-  CheckCircle2,
   XCircle,
   AlertTriangle,
   ArrowRight,
   Shield,
-  Activity,
   FileCode,
   Server,
   Database,
@@ -56,93 +54,85 @@ interface SystemAlert {
 // ─── Visual Mini-Components ─────────────────────────────────────────────────
 
 /**
- * Smooth SVG Sparkline matching the primary KPI cards in the reference screenshot.
+ * Clean, glowing SVG Sparkline with area fill gradient matching the requested card design.
  */
 function Sparkline({
   color,
-  data = [20, 35, 25, 45, 30, 60, 50, 75],
+  gradientId,
+  data = [20, 35, 25, 45, 30, 55, 40, 65, 50, 75],
+  width = 96,
+  height = 36,
 }: {
   color: string;
+  gradientId: string;
   data?: number[];
+  width?: number;
+  height?: number;
 }) {
-  const width = 110;
-  const height = 40;
   const max = Math.max(...data);
   const min = Math.min(...data);
   const range = max - min || 1;
 
-  const points = data.map((val, idx) => {
-    const x = (idx / (data.length - 1)) * (width - 8) + 4;
-    const y = height - ((val - min) / range) * (height - 12) - 6;
+  const points: [number, number][] = data.map((val, idx) => {
+    const x = (idx / (data.length - 1)) * (width - 4) + 2;
+    const y = height - ((val - min) / range) * (height - 8) - 4;
     return [x, y];
   });
 
   // Build smooth bezier curve
-  let d = `M ${points[0][0]} ${points[0][1]}`;
+  let curvePath = `M ${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[i];
     const p1 = points[i + 1];
-    const cpX = (p0[0] + p1[0]) / 2;
-    d += ` C ${cpX} ${p0[1]}, ${cpX} ${p1[1]}, ${p1[0]} ${p1[1]}`;
+    const cpX = ((p0[0] + p1[0]) / 2).toFixed(1);
+    curvePath += ` C ${cpX} ${p0[1].toFixed(1)}, ${cpX} ${p1[1].toFixed(1)}, ${p1[0].toFixed(1)} ${p1[1].toFixed(1)}`;
   }
+
+  const areaPath = `${curvePath} L ${points[points.length - 1][0].toFixed(1)} ${height} L ${points[0][0].toFixed(1)} ${height} Z`;
 
   return (
     <svg
       width={width}
       height={height}
-      className="overflow-visible shrink-0"
+      viewBox={`0 0 ${width} ${height}`}
+      className="shrink-0 overflow-visible"
       aria-hidden="true"
     >
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.32" />
+          <stop offset="100%" stopColor={color} stopOpacity="0.0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={`url(#${gradientId})`} />
       <path
-        d={d}
+        d={curvePath}
         fill="none"
         stroke={color}
-        strokeWidth="2.5"
+        strokeWidth="2.2"
         strokeLinecap="round"
         strokeLinejoin="round"
+        style={{
+          filter: `drop-shadow(0 2px 4px ${color}80)`,
+        }}
       />
     </svg>
   );
 }
 
-/**
- * Mini Histogram Bar Chart matching the AI Operations KPI cards in the reference screenshot.
- */
-function MiniHistogram({
-  color,
-  bars = [35, 55, 40, 70, 90, 60, 45, 80, 65, 95],
-}: {
-  color: string;
-  bars?: number[];
-}) {
-  return (
-    <div className="flex items-end gap-1.5 h-10 shrink-0" aria-hidden="true">
-      {bars.map((h, i) => (
-        <div
-          key={i}
-          className="w-1.5 rounded-t transition-all duration-300"
-          style={{
-            height: `${Math.max(15, h)}%`,
-            backgroundColor: color,
-            opacity: 0.7 + (i % 3) * 0.15,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 function KPISkeleton() {
   return (
-    <div className="p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] animate-pulse">
-      <div className="flex items-center justify-between">
-        <div className="w-11 h-11 bg-[#112139] rounded-xl" />
-        <div className="w-24 h-8 bg-[#112139] rounded" />
+    <div className="p-4 sm:p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] animate-pulse flex flex-col justify-between h-[116px]">
+      <div className="flex items-center gap-2">
+        <div className="w-4 h-4 bg-[#112139] rounded shrink-0" />
+        <div className="h-4 w-28 bg-[#112139] rounded" />
       </div>
-      <div className="mt-4">
-        <div className="h-3 w-20 bg-[#112139] rounded" />
-        <div className="mt-2 h-7 w-28 bg-[#112139] rounded" />
-        <div className="mt-2 h-3 w-32 bg-[#112139] rounded" />
+      <div className="flex items-end justify-between mt-4">
+        <div>
+          <div className="h-3 w-16 bg-[#112139] rounded" />
+          <div className="mt-2 h-6 w-20 bg-[#112139] rounded" />
+        </div>
+        <div className="w-20 h-8 bg-[#112139] rounded-lg shrink-0" />
       </div>
     </div>
   );
@@ -556,210 +546,140 @@ export default function AdminOverviewPage() {
               {/* Card 1: Total Users */}
               <Link
                 href="/admin/users"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#2784FF]/60 transition-all flex items-center justify-between shadow-card"
+                className="group relative p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#0D1A2B] to-[#0A1424] border border-[#24364D] hover:border-[#2784FF]/60 hover:shadow-[0_8px_30px_-6px_rgba(39,132,255,0.22)] transition-all duration-200 hover:-translate-y-0.5 flex flex-col justify-between shadow-card overflow-hidden before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.12] before:to-transparent"
               >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#2784FF]/15 text-[#2784FF] flex items-center justify-center shrink-0">
-                    <Users className="w-5 h-5" />
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-[#2784FF] shrink-0" />
+                  <span className="text-sm font-medium text-white tracking-tight">
+                    Total Users
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-3 mt-4">
+                  <div className="min-w-0">
+                    <div className="text-xs text-[#91A4BE] flex items-center gap-1.5 whitespace-nowrap">
+                      <span>Last 30 days</span>
+                      <span className="text-[#00D6A0] font-medium text-[11px]">↑ +12%</span>
+                    </div>
+                    <div className="text-2xl sm:text-[28px] font-bold tracking-tight text-white mt-1 leading-none tabular-nums whitespace-nowrap">
+                      {counts?.total_users.toLocaleString() ?? '13,374'}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Total Users
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
-                      {counts?.total_users.toLocaleString() ?? '13,373'}
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#00D6A0] mt-1">
-                      <span>↑</span>
-                      <span>+12% vs last 30 days</span>
-                    </div>
+                  <div className="shrink-0">
+                    <Sparkline
+                      color="#2784FF"
+                      gradientId="spark-users"
+                      data={[22, 38, 28, 48, 35, 62, 45, 70, 58, 80]}
+                      width={96}
+                      height={36}
+                    />
                   </div>
                 </div>
-                <Sparkline color="#2784FF" data={[15, 25, 20, 38, 30, 52, 45, 68]} />
               </Link>
 
               {/* Card 2: Organizations */}
               <Link
                 href="/admin/organizations"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#A855F7]/60 transition-all flex items-center justify-between shadow-card"
+                className="group relative p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#0D1A2B] to-[#0A1424] border border-[#24364D] hover:border-[#A855F7]/60 hover:shadow-[0_8px_30px_-6px_rgba(168,85,247,0.22)] transition-all duration-200 hover:-translate-y-0.5 flex flex-col justify-between shadow-card overflow-hidden before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.12] before:to-transparent"
               >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#A855F7]/15 text-[#A855F7] flex items-center justify-center shrink-0">
-                    <Building2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Organizations
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-[#A855F7] shrink-0" />
+                  <span className="text-sm font-medium text-white tracking-tight">
+                    Organizations
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-3 mt-4">
+                  <div className="min-w-0">
+                    <div className="text-xs text-[#91A4BE] flex items-center gap-1.5 whitespace-nowrap">
+                      <span>Last 30 days</span>
+                      <span className="text-[#00D6A0] font-medium text-[11px]">↑ +8%</span>
+                    </div>
+                    <div className="text-2xl sm:text-[28px] font-bold tracking-tight text-white mt-1 leading-none tabular-nums whitespace-nowrap">
                       {counts?.total_organizations.toLocaleString() ?? '5,190'}
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#00D6A0] mt-1">
-                      <span>↑</span>
-                      <span>+8% vs last 30 days</span>
-                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <Sparkline
+                      color="#A855F7"
+                      gradientId="spark-orgs"
+                      data={[30, 22, 45, 32, 60, 42, 75, 55, 82, 78]}
+                      width={96}
+                      height={36}
+                    />
                   </div>
                 </div>
-                <Sparkline color="#A855F7" data={[18, 30, 22, 42, 35, 58, 48, 70]} />
               </Link>
 
               {/* Card 3: Hackathons */}
               <Link
                 href="/admin/hackathons"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#F5B82E]/60 transition-all flex items-center justify-between shadow-card"
+                className="group relative p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#0D1A2B] to-[#0A1424] border border-[#24364D] hover:border-[#F5B82E]/60 hover:shadow-[0_8px_30px_-6px_rgba(245,184,46,0.22)] transition-all duration-200 hover:-translate-y-0.5 flex flex-col justify-between shadow-card overflow-hidden before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.12] before:to-transparent"
               >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#F5B82E]/15 text-[#F5B82E] flex items-center justify-center shrink-0">
-                    <Trophy className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Hackathons
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-[#F5B82E] shrink-0" />
+                  <span className="text-sm font-medium text-white tracking-tight">
+                    Hackathons
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-3 mt-4">
+                  <div className="min-w-0">
+                    <div className="text-xs text-[#91A4BE] flex items-center gap-1.5 whitespace-nowrap">
+                      <span>Last 30 days</span>
+                      <span className="text-[#00D6A0] font-medium text-[11px]">↑ +15%</span>
+                    </div>
+                    <div className="text-2xl sm:text-[28px] font-bold tracking-tight text-white mt-1 leading-none tabular-nums whitespace-nowrap">
                       {counts?.total_hackathons.toLocaleString() ?? '2,494'}
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#00D6A0] mt-1">
-                      <span>↑</span>
-                      <span>+15% vs last 30 days</span>
-                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <Sparkline
+                      color="#F5B82E"
+                      gradientId="spark-hackathons"
+                      data={[20, 35, 25, 50, 38, 65, 48, 72, 62, 85]}
+                      width={96}
+                      height={36}
+                    />
                   </div>
                 </div>
-                <Sparkline color="#F5B82E" data={[12, 28, 20, 48, 32, 60, 52, 75]} />
               </Link>
 
               {/* Card 4: Project Submissions */}
               <Link
                 href="/admin/hackathons"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#00D6A0]/60 transition-all flex items-center justify-between shadow-card"
+                className="group relative p-4 sm:p-5 rounded-2xl bg-gradient-to-b from-[#0D1A2B] to-[#0A1424] border border-[#24364D] hover:border-[#00D6A0]/60 hover:shadow-[0_8px_30px_-6px_rgba(0,214,160,0.22)] transition-all duration-200 hover:-translate-y-0.5 flex flex-col justify-between shadow-card overflow-hidden before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.12] before:to-transparent"
               >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#00D6A0]/15 text-[#00D6A0] flex items-center justify-center shrink-0">
-                    <FileCode className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Project Submissions
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
+                <div className="flex items-center gap-2">
+                  <FileCode className="w-4 h-4 text-[#00D6A0] shrink-0" />
+                  <span className="text-sm font-medium text-white tracking-tight">
+                    Project Submissions
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-3 mt-4">
+                  <div className="min-w-0">
+                    <div className="text-xs text-[#91A4BE] flex items-center gap-1.5 whitespace-nowrap">
+                      <span>Last 30 days</span>
+                      <span className="text-[#00D6A0] font-medium text-[11px]">↑ +21%</span>
+                    </div>
+                    <div className="text-2xl sm:text-[28px] font-bold tracking-tight text-white mt-1 leading-none tabular-nums whitespace-nowrap">
                       {counts?.total_submissions.toLocaleString() ?? '1,686'}
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#00D6A0] mt-1">
-                      <span>↑</span>
-                      <span>+21% vs last 30 days</span>
-                    </div>
+                  </div>
+                  <div className="shrink-0">
+                    <Sparkline
+                      color="#00D6A0"
+                      gradientId="spark-submissions"
+                      data={[25, 42, 30, 55, 40, 68, 52, 78, 65, 88]}
+                      width={96}
+                      height={36}
+                    />
                   </div>
                 </div>
-                <Sparkline color="#00D6A0" data={[14, 22, 35, 28, 50, 42, 65, 80]} />
               </Link>
             </>
           )}
         </div>
       </section>
 
-      {/* ─── 3. AI Operations KPI Row — 3 Columns ─── */}
-      <section aria-labelledby="ai-ops-heading">
-        <h2 id="ai-ops-heading" className="sr-only">
-          AI Operations Metrics
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {loading ? (
-            <>
-              <KPISkeleton />
-              <KPISkeleton />
-              <KPISkeleton />
-            </>
-          ) : (
-            <>
-              {/* Card 1: Evaluations Completed */}
-              <Link
-                href="/admin/ai-operations"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#00D6A0]/60 transition-all flex items-center justify-between shadow-card"
-              >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#00D6A0]/15 text-[#00D6A0] flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Evaluations Completed
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
-                      {counts?.evaluations_completed.toLocaleString() ?? '279'}
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#00D6A0] mt-1">
-                      <span>↑</span>
-                      <span>+18% vs last 30 days</span>
-                    </div>
-                  </div>
-                </div>
-                <MiniHistogram
-                  color="#00D6A0"
-                  bars={[25, 45, 35, 60, 80, 50, 40, 75, 65, 90]}
-                />
-              </Link>
-
-              {/* Card 2: Queued / Active Jobs */}
-              <Link
-                href="/admin/ai-operations"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#2784FF]/60 transition-all flex items-center justify-between shadow-card"
-              >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#2784FF]/15 text-[#2784FF] flex items-center justify-center shrink-0">
-                    <Activity className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Queued / Active Jobs
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
-                      {counts?.evaluations_running.toLocaleString() ?? '1,033'}
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#FF5C66] mt-1">
-                      <span>↑</span>
-                      <span>+5% vs last 30 days</span>
-                    </div>
-                  </div>
-                </div>
-                <MiniHistogram
-                  color="#2784FF"
-                  bars={[40, 30, 65, 50, 85, 70, 60, 80, 95, 75]}
-                />
-              </Link>
-
-              {/* Card 3: Evaluation Failures */}
-              <Link
-                href="/admin/ai-operations"
-                className="group p-5 rounded-2xl bg-[#0D1A2B] border border-[#24364D] hover:border-[#FF5C66]/60 transition-all flex items-center justify-between shadow-card"
-              >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-[#FF5C66]/15 text-[#FF5C66] flex items-center justify-center shrink-0">
-                    <AlertTriangle className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <span className="text-xs text-[#91A4BE] font-normal">
-                      Evaluation Failures
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-bold tracking-tight text-[#F3F6FC] mt-0.5">
-                      {counts?.evaluations_failed.toLocaleString() ?? '93'}
-                    </div>
-                    <div className="flex items-center gap-1 text-[11px] font-medium text-[#FF5C66] mt-1">
-                      <span>↓</span>
-                      <span>-12% vs last 30 days</span>
-                    </div>
-                  </div>
-                </div>
-                <MiniHistogram
-                  color="#FF5C66"
-                  bars={[70, 50, 85, 40, 60, 90, 75, 45, 65, 80]}
-                />
-              </Link>
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* ─── 4. Middle Row: Platform Activity Trends (60%) + Infrastructure Health (40%) ─── */}
+      {/* ─── 3. Middle Row: Platform Activity Trends (60%) + Infrastructure Health (40%) ─── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Panel Left: Platform Activity Trends (approx 60%) */}
         <section
@@ -1110,7 +1030,7 @@ export default function AdminOverviewPage() {
         {/* Panel A: Recent Governance Activity */}
         <section
           aria-labelledby="governance-heading"
-          className="p-6 rounded-2xl bg-[#0D1A2B] border border-[#24364D] shadow-card flex flex-col justify-between"
+          className="p-6 rounded-2xl bg-[#0D1A2B] border border-[#24364D] shadow-card flex flex-col"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-[#24364D]/40">
@@ -1180,7 +1100,7 @@ export default function AdminOverviewPage() {
         {/* Panel B: Recent Organizations */}
         <section
           aria-labelledby="recent-orgs-heading"
-          className="p-6 rounded-2xl bg-[#0D1A2B] border border-[#24364D] shadow-card flex flex-col justify-between"
+          className="p-6 rounded-2xl bg-[#0D1A2B] border border-[#24364D] shadow-card flex flex-col"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-[#24364D]/40">
@@ -1258,7 +1178,7 @@ export default function AdminOverviewPage() {
         {/* Panel C: System Alerts */}
         <section
           aria-labelledby="alerts-heading"
-          className="p-6 rounded-2xl bg-[#0D1A2B] border border-[#24364D] shadow-card flex flex-col justify-between"
+          className="p-6 rounded-2xl bg-[#0D1A2B] border border-[#24364D] shadow-card flex flex-col"
         >
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-[#24364D]/40">
