@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Building2,
   Users,
+  ShieldCheck,
   Trophy,
   CreditCard,
   Cpu,
@@ -51,6 +52,12 @@ const navigationSections: NavSection[] = [
         priority: 'P0',
       },
       {
+        title: 'Roles & Permissions',
+        href: '/admin/roles-permissions',
+        icon: ShieldCheck,
+        priority: 'P0',
+      },
+      {
         title: 'Hackathons',
         href: '/admin/hackathons',
         icon: Trophy,
@@ -89,6 +96,18 @@ const navigationSections: NavSection[] = [
         href: '/admin/security',
         icon: ShieldAlert,
         priority: 'P0',
+      },
+      {
+        title: 'Support Center',
+        href: '/admin/support',
+        icon: LifeBuoy,
+        priority: 'P1',
+      },
+      {
+        title: 'Notifications',
+        href: '/admin/notifications',
+        icon: Bell,
+        priority: 'P1',
       },
       {
         title: 'Integrations',

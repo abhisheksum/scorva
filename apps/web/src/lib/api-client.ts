@@ -64,6 +64,11 @@ import {
   SubmissionReviewsResponse,
   JudgeHackathonDetail,
   ParticipantTeamItem,
+  PermissionItem,
+  RoleItem,
+  CreateRoleRequest,
+  UpdateRolePermissionsRequest,
+  UserRoleAssignmentItem,
 } from '@/types/api';
 
 const API_BASE_URL =
@@ -1131,5 +1136,40 @@ export const api = {
       `/api/v1/organizations/${orgId}/hackathons/${hackathonId}/submissions/${submissionId}/reviews`,
       options
     );
+  },
+
+  // Platform Admin: Roles & Permissions (RBAC)
+  getPermissions: async (options?: RequestInit): Promise<PermissionItem[]> => {
+    return fetchApi<PermissionItem[]>('/api/v1/admin/permissions', options);
+  },
+
+  getRoles: async (
+    params?: { scope_type?: string; scope_id?: string },
+    options?: RequestInit
+  ): Promise<RoleItem[]> => {
+    const searchParams = new URLSearchParams();
+    if (params?.scope_type) searchParams.set('scope_type', params.scope_type);
+    if (params?.scope_id) searchParams.set('scope_id', params.scope_id);
+    const qs = searchParams.toString();
+    return fetchApi<RoleItem[]>(`/api/v1/admin/roles${qs ? `?${qs}` : ''}`, options);
+  },
+
+  createRole: async (
+    data: CreateRoleRequest
+  ): Promise<RoleItem> => {
+    return fetchApi<RoleItem>('/api/v1/admin/roles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateRolePermissions: async (
+    roleId: string,
+    data: UpdateRolePermissionsRequest
+  ): Promise<RoleItem> => {
+    return fetchApi<RoleItem>(`/api/v1/admin/roles/${roleId}/permissions`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 };

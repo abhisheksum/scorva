@@ -124,3 +124,38 @@ test('Users & Access Admin: UsersPage implements server pagination, AbortControl
   assert.ok(apiTypesContent.includes('interface PaginatedUsersResponse'), 'types/api.ts must define PaginatedUsersResponse');
 });
 
+test('Admin Sidebar: includes Support, Notifications, and Roles & Permissions navigation', () => {
+  const sidebarPath = path.join(WEB_ROOT, 'components/admin/AdminSidebar.tsx');
+  const sidebarContent = fs.readFileSync(sidebarPath, 'utf8');
+
+  // Verify Roles & Permissions navigation item
+  assert.ok(sidebarContent.includes("href: '/admin/roles-permissions'"), 'Sidebar must have /admin/roles-permissions route');
+  assert.ok(sidebarContent.includes("title: 'Roles & Permissions'"), 'Sidebar must have Roles & Permissions title');
+  assert.ok(sidebarContent.includes('ShieldCheck'), 'Sidebar must import and use ShieldCheck icon');
+
+  // Verify Support Center navigation item
+  assert.ok(sidebarContent.includes("href: '/admin/support'"), 'Sidebar must have /admin/support route');
+  assert.ok(sidebarContent.includes("title: 'Support Center'"), 'Sidebar must have Support Center title');
+  assert.ok(sidebarContent.includes('LifeBuoy'), 'Sidebar must import and use LifeBuoy icon');
+
+  // Verify Notifications navigation item
+  assert.ok(sidebarContent.includes("href: '/admin/notifications'"), 'Sidebar must have /admin/notifications route');
+  assert.ok(sidebarContent.includes("title: 'Notifications'"), 'Sidebar must have Notifications title');
+  assert.ok(sidebarContent.includes('Bell'), 'Sidebar must import and use Bell icon');
+
+  // Verify target page files exist
+  assert.ok(fs.existsSync(path.join(WEB_ROOT, 'app/admin/roles-permissions/page.tsx')), 'Roles & permissions page must exist');
+  assert.ok(fs.existsSync(path.join(WEB_ROOT, 'app/admin/roles/page.tsx')), 'Roles redirect page must exist');
+  assert.ok(fs.existsSync(path.join(WEB_ROOT, 'app/admin/support/page.tsx')), 'Support page must exist');
+  assert.ok(fs.existsSync(path.join(WEB_ROOT, 'app/admin/notifications/page.tsx')), 'Notifications page must exist');
+
+  // Verify RBAC client API methods
+  const apiClientPath = path.join(WEB_ROOT, 'lib/api-client.ts');
+  const clientContent = fs.readFileSync(apiClientPath, 'utf8');
+  assert.ok(clientContent.includes('getPermissions:'), 'api client must have getPermissions');
+  assert.ok(clientContent.includes('getRoles:'), 'api client must have getRoles');
+  assert.ok(clientContent.includes('createRole:'), 'api client must have createRole');
+  assert.ok(clientContent.includes('updateRolePermissions:'), 'api client must have updateRolePermissions');
+});
+
+

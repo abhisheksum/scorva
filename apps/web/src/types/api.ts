@@ -1021,3 +1021,53 @@ export interface ParticipantTeamItem {
   submission?: ParticipantSubmissionSummary | null;
 }
 
+// ==========================================
+// RBAC: Roles & Permissions Types (Phase 4)
+// ==========================================
+
+export interface PermissionItem {
+  id: string;
+  domain: string;
+  action: string;
+  min_scope: string;
+  is_delegable: boolean;
+  description: string;
+}
+
+export interface RoleItem {
+  id: string;
+  name: string;
+  display_name: string;
+  scope_type: 'platform' | 'organization' | 'hackathon' | string;
+  scope_id: string;
+  is_system: boolean;
+  is_immutable: boolean;
+  permissions: string[];
+  created_at: string;
+}
+
+export interface CreateRoleRequest {
+  name: string;
+  display_name: string;
+  scope_type: 'platform' | 'organization' | 'hackathon';
+  scope_id?: string;
+  permissions?: string[];
+}
+
+export interface UpdateRolePermissionsRequest {
+  permissions: string[];
+  change_reason?: string;
+}
+
+export interface UserRoleAssignmentItem {
+  id: string;
+  user_id: string;
+  role_id: string;
+  role_name?: string;
+  scope_type: string;
+  scope_id: string;
+  assigned_by_user_id?: string | null;
+  created_at: string;
+}
+
+
