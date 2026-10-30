@@ -10,7 +10,7 @@ import apps.api.core.redis as core_async_redis
 from apps.api.dependencies import require_platform_role
 from apps.api.modules.audit.models import AuditEvent
 from apps.api.modules.evaluations.models import EvaluationJob, Submission
-from apps.api.modules.hackathons.models import Hackathon
+from apps.api.modules.hackathons.models import Hackathon, HackathonStatus
 from apps.api.modules.organizations.models import Organization
 from apps.api.modules.users.models import User
 from apps.api.modules.dashboard.schemas import (
@@ -57,6 +57,7 @@ async def get_dashboard_overview(
         select(func.count(User.id)).where(User.deleted_at.is_(None)).scalar_subquery().label("total_users"),
         select(func.count(Organization.id)).where(Organization.deleted_at.is_(None)).scalar_subquery().label("total_organizations"),
         select(func.count(Hackathon.id)).where(Hackathon.deleted_at.is_(None)).scalar_subquery().label("total_hackathons"),
+        select(func.count(Hackathon.id)).where(Hackathon.deleted_at.is_(None), Hackathon.status == HackathonStatus.PUBLISHED).scalar_subquery().label("active_hackathons"),
         select(func.count(Submission.id)).scalar_subquery().label("total_submissions"),
         select(func.count(EvaluationJob.id)).where(EvaluationJob.status == "completed").scalar_subquery().label("evaluations_completed"),
         select(func.count(EvaluationJob.id)).where(EvaluationJob.status.in_(["queued", "running", "pending", "leased", "evaluating"])).scalar_subquery().label("evaluations_running"),
@@ -87,6 +88,7 @@ async def get_dashboard_overview(
             total_users=counts_row.total_users or 0,
             total_organizations=counts_row.total_organizations or 0,
             total_hackathons=counts_row.total_hackathons or 0,
+            active_hackathons=counts_row.active_hackathons or 0,
             total_submissions=counts_row.total_submissions or 0,
             evaluations_completed=counts_row.evaluations_completed or 0,
             evaluations_running=counts_row.evaluations_running or 0,

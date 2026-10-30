@@ -7,6 +7,7 @@ class DashboardMetricCounts(BaseModel):
     total_users: int
     total_organizations: int
     total_hackathons: int
+    active_hackathons: int = 0
     total_submissions: int
     evaluations_completed: int
     evaluations_running: int

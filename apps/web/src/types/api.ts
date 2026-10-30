@@ -88,6 +88,7 @@ export interface DashboardMetricCounts {
   total_users: number;
   total_organizations: number;
   total_hackathons: number;
+  active_hackathons?: number;
   total_submissions: number;
   evaluations_completed: number;
   evaluations_running: number;
@@ -881,6 +882,9 @@ export interface JudgeSubmissionReviewResponse {
   organization_id: string;
   team_name: string;
   submission_title: string;
+  description?: string | null;
+  created_at?: string | null;
+  hackathon_title?: string | null;
   repository_url: string;
   repository_owner?: string | null;
   repository_name?: string | null;
@@ -920,6 +924,9 @@ export interface JudgeQueueItem {
   review_score?: number | string | null;
   review_submitted_at?: string | null;
   review_updated_at?: string | null;
+  hackathon_id?: string | null;
+  hackathon_title?: string | null;
+  created_at?: string | null;
 }
 
 export interface JudgeAssignmentItem {

@@ -221,6 +221,109 @@ async def get_judge_queue(
                 review_score=review_score,
                 review_submitted_at=review_submitted_at,
                 review_updated_at=review_updated_at,
+                hackathon_id=hackathon_id,
+                hackathon_title=hackathon.title if hackathon else None,
+                created_at=sub.created_at,
+            )
+        )
+
+    return queue_items
+
+
+async def list_all_assigned_submissions(
+    db: AsyncSession,
+    current_user: User,
+) -> List[JudgeQueueItem]:
+    """
+    Returns all submissions across all hackathons where the authenticated user is an assigned judge.
+    Supports cross-hackathon overview on /judge/projects and /judge/reviews.
+    """
+    stmt = (
+        select(HackathonJudge.hackathon_id, Hackathon.title, Hackathon.organization_id)
+        .join(Hackathon, HackathonJudge.hackathon_id == Hackathon.id)
+        .where(
+            HackathonJudge.user_id == current_user.id,
+            Hackathon.deleted_at.is_(None),
+        )
+    )
+    assigned_hackathons = (await db.execute(stmt)).all()
+    if not assigned_hackathons:
+        return []
+
+    hackathon_map = {row[0]: (row[1], row[2]) for row in assigned_hackathons}
+    hackathon_ids = list(hackathon_map.keys())
+
+    sub_stmt = (
+        select(Submission)
+        .where(
+            Submission.hackathon_id.in_(hackathon_ids),
+            Submission.deleted_at.is_(None),
+        )
+        .order_by(Submission.created_at.desc())
+    )
+    submissions = (await db.execute(sub_stmt)).scalars().all()
+
+    queue_items: List[JudgeQueueItem] = []
+    for sub in submissions:
+        hack_title, _ = hackathon_map.get(sub.hackathon_id, (None, None))
+
+        latest_job_stmt = (
+            select(EvaluationJob)
+            .where(EvaluationJob.submission_id == sub.id)
+            .order_by(EvaluationJob.created_at.desc())
+            .limit(1)
+        )
+        latest_job = (await db.execute(latest_job_stmt)).scalar_one_or_none()
+
+        ai_status = "none"
+        ai_normalized_score: Optional[Decimal] = None
+        if latest_job:
+            ai_status = latest_job.status
+            if latest_job.current_result_id:
+                res = (
+                    await db.execute(
+                        select(EvaluationResult).where(EvaluationResult.id == latest_job.current_result_id)
+                    )
+                ).scalar_one_or_none()
+                if res:
+                    ai_normalized_score = res.normalized_score
+
+        review_stmt = select(JudgeReview).where(
+            JudgeReview.submission_id == sub.id,
+            JudgeReview.judge_user_id == current_user.id,
+        )
+        my_review = (await db.execute(review_stmt)).scalar_one_or_none()
+
+        review_status = "not_started"
+        review_score: Optional[Decimal] = None
+        review_submitted_at: Optional[datetime] = None
+        review_updated_at: Optional[datetime] = None
+
+        if my_review:
+            review_status = my_review.status
+            review_score = my_review.score
+            review_submitted_at = my_review.submitted_at
+            review_updated_at = my_review.updated_at
+
+        queue_items.append(
+            JudgeQueueItem(
+                submission_id=sub.id,
+                team_name=sub.team_name,
+                title=sub.title,
+                repository_owner=sub.repository_owner,
+                repository_name=sub.repository_name,
+                target_branch=sub.target_branch,
+                verified_commit_sha=sub.verified_commit_sha,
+                connection_status=sub.connection_status,
+                ai_evaluation_status=ai_status,
+                ai_normalized_score=ai_normalized_score,
+                review_status=review_status,
+                review_score=review_score,
+                review_submitted_at=review_submitted_at,
+                review_updated_at=review_updated_at,
+                hackathon_id=sub.hackathon_id,
+                hackathon_title=hack_title,
+                created_at=sub.created_at,
             )
         )
 
@@ -256,6 +359,12 @@ async def get_submission_judge_review(
             code="SUBMISSION_NOT_FOUND",
             message="Submission not found in this hackathon.",
         )
+
+    hackathon_stmt = select(Hackathon).where(
+        Hackathon.id == hackathon_id,
+        Hackathon.deleted_at.is_(None),
+    )
+    hackathon = (await db.execute(hackathon_stmt)).scalar_one_or_none()
 
     # 2. Authorization check
     judge_user_id = target_judge_user_id or current_user.id
@@ -452,6 +561,9 @@ async def get_submission_judge_review(
         organization_id=org_id,
         team_name=submission.team_name,
         submission_title=submission.title,
+        description=submission.description,
+        created_at=submission.created_at,
+        hackathon_title=hackathon.title if hackathon else None,
         repository_url=submission.repository_url,
         repository_owner=submission.repository_owner,
         repository_name=submission.repository_name,

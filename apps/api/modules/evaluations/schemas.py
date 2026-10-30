@@ -453,6 +453,9 @@ class JudgeSubmissionReviewResponse(BaseModel):
     organization_id: uuid.UUID
     team_name: str
     submission_title: str
+    description: Optional[str] = None
+    created_at: Optional[datetime] = None
+    hackathon_title: Optional[str] = None
     repository_url: str
     repository_owner: Optional[str] = None
     repository_name: Optional[str] = None
@@ -485,6 +488,9 @@ class JudgeQueueItem(BaseModel):
     review_score: Optional[Decimal] = None
     review_submitted_at: Optional[datetime] = None
     review_updated_at: Optional[datetime] = None
+    hackathon_id: Optional[uuid.UUID] = None
+    hackathon_title: Optional[str] = None
+    created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

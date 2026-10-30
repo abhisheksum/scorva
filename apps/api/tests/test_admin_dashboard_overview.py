@@ -30,6 +30,7 @@ async def test_admin_dashboard_overview_success(client: AsyncClient, db_session,
     assert counts["total_users"] >= 1
     assert "total_organizations" in counts
     assert "total_hackathons" in counts
+    assert "active_hackathons" in counts
     assert "total_submissions" in counts
     assert "evaluations_completed" in counts
     assert "evaluations_running" in counts

@@ -980,6 +980,12 @@ export const api = {
     return fetchApi<JudgeAssignmentItem[]>('/api/v1/judge/assignments', options);
   },
 
+  getJudgeSubmissions: async (
+    options?: RequestInit
+  ): Promise<JudgeQueueItem[]> => {
+    return fetchApi<JudgeQueueItem[]>('/api/v1/judge/submissions', options);
+  },
+
   getJudgeQueue: async (
     orgId: string,
     hackathonId: string,
@@ -1081,6 +1087,20 @@ export const api = {
   },
 
   submitJudgeSubmissionReview: async (
+    hackathonId: string,
+    submissionId: string,
+    data: SubmitJudgeReviewRequest
+  ): Promise<JudgeReviewDetail> => {
+    return fetchApi<JudgeReviewDetail>(
+      `/api/v1/judge/hackathons/${hackathonId}/submissions/${submissionId}/review/submit`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  submitJudgeReview: async (
     hackathonId: string,
     submissionId: string,
     data: SubmitJudgeReviewRequest

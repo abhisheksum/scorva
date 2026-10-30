@@ -91,6 +91,18 @@ async def get_my_judge_assignments(
     return await judge_service.list_judge_assignments(db=db, current_user_id=user.id)
 
 
+@router.get("/submissions", response_model=List[JudgeQueueItem])
+async def list_all_judge_submissions(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> List[JudgeQueueItem]:
+    """
+    Returns all submissions across all hackathons where the authenticated caller is an assigned judge.
+    Supports cross-hackathon overview on /judge/projects and /judge/reviews.
+    """
+    return await judge_service.list_all_assigned_submissions(db=db, current_user=user)
+
+
 @router.get("/hackathons/{hackathon_id}", response_model=JudgeHackathonDetailResponse)
 async def get_judge_hackathon_detail(
     hackathon_id: uuid.UUID,
