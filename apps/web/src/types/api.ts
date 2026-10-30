@@ -1025,6 +1025,7 @@ export interface ParticipantTeamItem {
   submission_deadline?: string | null;
   organization_id: string;
   organization_name: string;
+  team_members?: string[];
   submission?: ParticipantSubmissionSummary | null;
 }
 
@@ -1076,5 +1077,142 @@ export interface UserRoleAssignmentItem {
   assigned_by_user_id?: string | null;
   created_at: string;
 }
+
+// ==========================================
+// Participant Workspace Types
+// ==========================================
+
+export interface LifecycleStageItem {
+  id: string;
+  name: string;
+  status: 'completed' | 'in_progress' | 'upcoming';
+  completed_at?: string | null;
+  description: string;
+}
+
+export interface ParticipantOverviewResponse {
+  welcome_name: string;
+  active_hackathons_count: number;
+  submission_status: string;
+  current_rank?: number | null;
+  total_score?: number | null;
+  participations: ParticipantTeamItem[];
+  stages: LifecycleStageItem[];
+  recent_updates: Array<Record<string, any>>;
+  upcoming_deadlines: Array<Record<string, any>>;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  team_name: string;
+  project_title: string;
+  score: number;
+  status: string;
+  is_my_team: boolean;
+}
+
+export interface LeaderboardResponse {
+  hackathon_id: string;
+  hackathon_title: string;
+  is_published: boolean;
+  message?: string | null;
+  entries: LeaderboardEntry[];
+}
+
+export interface CriterionBreakdownItem {
+  criterion_id: string;
+  criterion_name: string;
+  max_score: number;
+  awarded_score?: number | null;
+  weight: number;
+  progress_percentage: number;
+  rationale?: string | null;
+}
+
+export interface PerformanceResponse {
+  has_submission: boolean;
+  submission_id?: string | null;
+  submission_title?: string | null;
+  team_name?: string | null;
+  hackathon_title?: string | null;
+  evaluation_status: 'pending' | 'evaluating' | 'completed' | 'published' | string;
+  final_score?: number | null;
+  max_score: number;
+  current_rank?: number | null;
+  completed_reviews_count: number;
+  criteria_breakdown: CriterionBreakdownItem[];
+  authorized_feedback: string[];
+  ai_summary?: string | null;
+}
+
+export interface ParticipantTaskItem {
+  id: string;
+  title: string;
+  description: string;
+  issued_by: string;
+  hackathon_title: string;
+  category: 'task' | 'sponsorship' | 'requirement' | string;
+  due_date?: string | null;
+  status: 'new' | 'in_progress' | 'completed' | 'overdue' | string;
+  action_url?: string | null;
+  sponsor_name?: string | null;
+}
+
+export interface UpdateTaskStatusRequest {
+  status: 'new' | 'in_progress' | 'completed';
+}
+
+export interface ParticipantNotificationItem {
+  id: string;
+  title: string;
+  description: string;
+  created_at: string;
+  type: 'team' | 'submission' | 'evaluation' | 'announcement' | 'support' | string;
+  is_read: boolean;
+  action_url?: string | null;
+}
+
+export interface NotificationListResponse {
+  unread_count: number;
+  notifications: ParticipantNotificationItem[];
+}
+
+export interface SupportTicketItem {
+  id: string;
+  ticket_number: string;
+  category: string;
+  subject: string;
+  description: string;
+  status: 'open' | 'in_progress' | 'waiting_response' | 'resolved' | 'closed' | string;
+  hackathon_title?: string | null;
+  created_at: string;
+  updated_at: string;
+  replies_count: number;
+}
+
+export interface SupportReplyItem {
+  id: string;
+  author_name: string;
+  is_staff: boolean;
+  message: string;
+  created_at: string;
+}
+
+export interface SupportTicketDetailResponse {
+  ticket: SupportTicketItem;
+  replies: SupportReplyItem[];
+}
+
+export interface CreateSupportTicketRequest {
+  category: string;
+  subject: string;
+  description: string;
+  hackathon_id?: string | null;
+}
+
+export interface CreateSupportReplyRequest {
+  message: string;
+}
+
 
 

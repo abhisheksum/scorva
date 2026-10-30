@@ -69,6 +69,18 @@ import {
   CreateRoleRequest,
   UpdateRolePermissionsRequest,
   UserRoleAssignmentItem,
+  LifecycleStageItem,
+  ParticipantOverviewResponse,
+  LeaderboardResponse,
+  PerformanceResponse,
+  ParticipantTaskItem,
+  UpdateTaskStatusRequest,
+  NotificationListResponse,
+  SupportTicketItem,
+  SupportReplyItem,
+  SupportTicketDetailResponse,
+  CreateSupportTicketRequest,
+  CreateSupportReplyRequest,
 } from '@/types/api';
 
 const API_BASE_URL =
@@ -1191,5 +1203,111 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  },
+
+  // Participant Workspace
+  getParticipantOverview: async (
+    options?: RequestInit
+  ): Promise<ParticipantOverviewResponse> => {
+    return fetchApi<ParticipantOverviewResponse>('/api/v1/participant/overview', options);
+  },
+
+  getParticipantLeaderboard: async (
+    hackathonId?: string,
+    options?: RequestInit
+  ): Promise<LeaderboardResponse> => {
+    const qs = hackathonId ? `?hackathon_id=${encodeURIComponent(hackathonId)}` : '';
+    return fetchApi<LeaderboardResponse>(`/api/v1/participant/leaderboard${qs}`, options);
+  },
+
+  getParticipantPerformance: async (
+    hackathonId?: string,
+    options?: RequestInit
+  ): Promise<PerformanceResponse> => {
+    const qs = hackathonId ? `?hackathon_id=${encodeURIComponent(hackathonId)}` : '';
+    return fetchApi<PerformanceResponse>(`/api/v1/participant/performance${qs}`, options);
+  },
+
+  getParticipantTasks: async (
+    options?: RequestInit
+  ): Promise<ParticipantTaskItem[]> => {
+    return fetchApi<ParticipantTaskItem[]>('/api/v1/participant/tasks', options);
+  },
+
+  updateParticipantTaskStatus: async (
+    taskId: string,
+    status: 'new' | 'in_progress' | 'completed'
+  ): Promise<{ status: string; task_id: string; new_status: string }> => {
+    return fetchApi<{ status: string; task_id: string; new_status: string }>(
+      `/api/v1/participant/tasks/${encodeURIComponent(taskId)}/status`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      }
+    );
+  },
+
+  getParticipantNotifications: async (
+    options?: RequestInit
+  ): Promise<NotificationListResponse> => {
+    return fetchApi<NotificationListResponse>('/api/v1/participant/notifications', options);
+  },
+
+  markParticipantNotificationRead: async (
+    notificationId: string
+  ): Promise<{ status: string; notification_id: string }> => {
+    return fetchApi<{ status: string; notification_id: string }>(
+      `/api/v1/participant/notifications/${encodeURIComponent(notificationId)}/read`,
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  markAllParticipantNotificationsRead: async (): Promise<{ status: string; count: number }> => {
+    return fetchApi<{ status: string; count: number }>(
+      '/api/v1/participant/notifications/read-all',
+      {
+        method: 'POST',
+      }
+    );
+  },
+
+  getParticipantSupportTickets: async (
+    options?: RequestInit
+  ): Promise<SupportTicketItem[]> => {
+    return fetchApi<SupportTicketItem[]>('/api/v1/participant/support/tickets', options);
+  },
+
+  createParticipantSupportTicket: async (
+    data: CreateSupportTicketRequest
+  ): Promise<SupportTicketItem> => {
+    return fetchApi<SupportTicketItem>('/api/v1/participant/support/tickets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getParticipantSupportTicketDetail: async (
+    ticketId: string,
+    options?: RequestInit
+  ): Promise<SupportTicketDetailResponse> => {
+    return fetchApi<SupportTicketDetailResponse>(
+      `/api/v1/participant/support/tickets/${encodeURIComponent(ticketId)}`,
+      options
+    );
+  },
+
+  replyParticipantSupportTicket: async (
+    ticketId: string,
+    data: CreateSupportReplyRequest
+  ): Promise<SupportReplyItem> => {
+    return fetchApi<SupportReplyItem>(
+      `/api/v1/participant/support/tickets/${encodeURIComponent(ticketId)}/replies`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
   },
 };

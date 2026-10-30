@@ -3,45 +3,44 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Users,
   Trophy,
-  Github,
-  GitBranch,
+  Layers,
   Clock,
   CheckCircle2,
   AlertCircle,
   Copy,
   Check,
   RefreshCw,
-  LogOut,
-  User,
+  ArrowRight,
+  Github,
+  GitBranch,
+  ShieldCheck,
+  Calendar,
+  Sparkles,
+  Award,
+  ChevronRight,
   ExternalLink,
-  Shield,
-  Layers,
 } from 'lucide-react';
-import { StatusBadge } from '@/components/admin/StatusBadge';
 import { api, ApiClientError } from '@/lib/api-client';
-import { useAuth } from '@/lib/auth-context';
-import { ParticipantTeamItem } from '@/types/api';
+import { ParticipantOverviewResponse, ParticipantTeamItem } from '@/types/api';
 
-export default function ParticipantWorkspacePage() {
-  const { user, logout } = useAuth();
-  const [teams, setTeams] = useState<ParticipantTeamItem[]>([]);
+export default function ParticipantOverviewPage() {
+  const [data, setData] = useState<ParticipantOverviewResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const fetchTeams = async () => {
+  const fetchOverview = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await api.getParticipantTeams();
-      setTeams(data);
+      const res = await api.getParticipantOverview();
+      setData(res);
     } catch (err: unknown) {
       if (err instanceof ApiClientError) {
         setError(err.message);
       } else {
-        setError('Failed to load enrolled teams. Please check your network connection.');
+        setError('Failed to load participant overview. Please verify your connection.');
       }
     } finally {
       setIsLoading(false);
@@ -49,7 +48,7 @@ export default function ParticipantWorkspacePage() {
   };
 
   useEffect(() => {
-    fetchTeams();
+    fetchOverview();
   }, []);
 
   const handleCopyCode = (code: string) => {
@@ -58,263 +57,410 @@ export default function ParticipantWorkspacePage() {
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <RefreshCw className="w-8 h-8 text-[#2563EB] animate-spin mb-3" />
+        <h3 className="text-sm font-semibold text-[#111827]">Loading Workspace Overview</h3>
+        <p className="text-xs text-[#64748B] mt-1">Retrieving your teams, submissions, and timeline...</p>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="bg-white border border-[#E2E8F0] rounded-xl p-8 text-center max-w-xl mx-auto shadow-xs">
+        <AlertCircle className="w-10 h-10 text-[#DC2626] mx-auto mb-3" />
+        <h3 className="text-base font-semibold text-[#111827]">Unable to load dashboard</h3>
+        <p className="text-sm text-[#64748B] mt-1 mb-6">{error || 'Something went wrong.'}</p>
+        <button
+          onClick={fetchOverview}
+          className="inline-flex items-center gap-2 px-4 py-2 bg-[#2563EB] text-white text-xs font-medium rounded-lg hover:bg-[#1D4ED8] transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-surface-bg text-text-primary">
-      {/* Top Header */}
-      <header className="h-16 bg-surface border-b border-surface-border px-4 sm:px-6 flex items-center justify-between shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-bold">
-            <Users className="w-4 h-4" />
+    <div className="space-y-8">
+      {/* Welcome Banner */}
+      <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xs">
+        <div>
+          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#BFDBFE] text-xs font-semibold text-[#2563EB] mb-2.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            Hackathon Participant Workspace
           </div>
-          <div>
-            <span className="font-bold text-sm tracking-wide text-text-primary">Scorva Participant Workspace</span>
-            <span className="hidden sm:inline-block ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
-              Team Member
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#111827]">
+            Welcome back, {data.welcome_name}
+          </h1>
+          <p className="text-sm text-[#64748B] mt-1.5 max-w-2xl">
+            Track your team’s progress, manage your submission, review evaluation feedback, and monitor real-time rankings.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 shrink-0">
+          <Link
+            href="/participant/leaderboard"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#2563EB] text-white text-xs font-semibold rounded-lg hover:bg-[#1D4ED8] transition-colors shadow-xs"
+          >
+            <Trophy className="w-4 h-4" />
+            Live Leaderboard
+          </Link>
+          <Link
+            href="/participant/performance"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white text-[#111827] text-xs font-semibold rounded-lg border border-[#E2E8F0] hover:bg-[#F8FAFC] transition-colors shadow-xs"
+          >
+            My Performance
+          </Link>
+        </div>
+      </div>
+
+      {/* 4 Top Metric Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Active Events</span>
+            <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] flex items-center justify-center text-[#2563EB]">
+              <Layers className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#111827]">{data.active_hackathons_count}</span>
+            <span className="text-xs text-[#64748B]">Enrolled</span>
+          </div>
+          <p className="text-xs text-[#64748B] mt-1">Hackathons you are participating in</p>
+        </div>
+
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Project Status</span>
+            <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] flex items-center justify-center text-[#2563EB]">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-lg font-bold text-[#111827] truncate capitalize">
+              {data.submission_status.replace('_', ' ')}
             </span>
           </div>
+          <p className="text-xs text-[#64748B] mt-1">Primary team submission state</p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {user?.routing?.accessible_destinations && user.routing.accessible_destinations.length > 1 && (
-            <div className="hidden md:flex items-center gap-1.5 pr-2 border-r border-surface-border text-xs">
-              <span className="text-text-muted text-[11px]">Workspaces:</span>
-              {user.routing.accessible_destinations.map((dest) => (
-                <Link
-                  key={dest.destination}
-                  href={dest.destination}
-                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
-                    dest.destination === '/participant'
-                      ? 'bg-primary text-white'
-                      : 'text-text-muted hover:text-text-primary hover:bg-surface-elevated'
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Current Standing</span>
+            <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] flex items-center justify-center text-[#2563EB]">
+              <Trophy className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#111827]">
+              {data.current_rank ? `#${data.current_rank}` : '—'}
+            </span>
+            <span className="text-xs text-[#64748B]">Rank</span>
+          </div>
+          <p className="text-xs text-[#64748B] mt-1">
+            {data.current_rank ? 'Official placement' : 'Pending published results'}
+          </p>
+        </div>
+
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">Overall Score</span>
+            <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] flex items-center justify-center text-[#2563EB]">
+              <Award className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-3 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-[#111827]">
+              {data.total_score !== null && data.total_score !== undefined ? `${data.total_score}` : '—'}
+            </span>
+            <span className="text-xs text-[#64748B]">/ 100</span>
+          </div>
+          <p className="text-xs text-[#64748B] mt-1">Weighted evaluation total</p>
+        </div>
+      </div>
+
+      {/* Lifecycle Progress Stepper */}
+      <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs">
+        <div className="flex items-center justify-between pb-4 border-b border-[#E2E8F0] mb-6">
+          <div>
+            <h2 className="text-base font-bold text-[#111827]">Hackathon Progression</h2>
+            <p className="text-xs text-[#64748B] mt-0.5">Key milestones from registration to final results</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          {data.stages.map((stage, idx) => {
+            const isCompleted = stage.status === 'completed';
+            const isInProgress = stage.status === 'in_progress';
+            return (
+              <div
+                key={stage.id}
+                className={`flex flex-col p-3.5 rounded-lg border transition-all ${
+                  isCompleted
+                    ? 'bg-[#F0FDF4] border-[#BBF7D0]'
+                    : isInProgress
+                    ? 'bg-[#EFF6FF] border-[#BFDBFE]'
+                    : 'bg-[#F8FAFC] border-[#E2E8F0]'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                    Step {idx + 1}
+                  </span>
+                  {isCompleted && <CheckCircle2 className="w-4 h-4 text-[#16A34A]" />}
+                  {isInProgress && (
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2563EB] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2563EB]"></span>
+                    </span>
+                  )}
+                  {!isCompleted && !isInProgress && (
+                    <div className="w-2.5 h-2.5 rounded-full bg-[#CBD5E1]" />
+                  )}
+                </div>
+                <span className="text-xs font-semibold text-[#111827] leading-snug">{stage.name}</span>
+                <span className="text-[11px] text-[#64748B] mt-1 leading-normal line-clamp-2">
+                  {stage.description}
+                </span>
+                <span
+                  className={`mt-2 text-[10px] font-semibold uppercase tracking-wider ${
+                    isCompleted
+                      ? 'text-[#16A34A]'
+                      : isInProgress
+                      ? 'text-[#2563EB]'
+                      : 'text-[#94A3B8]'
                   }`}
                 >
-                  {dest.label}
-                </Link>
-              ))}
-            </div>
-          )}
-
-          <div className="flex items-center gap-2 pl-2">
-            <div className="w-7 h-7 rounded-full bg-surface-elevated border border-surface-border flex items-center justify-center text-text-primary shrink-0">
-              <User className="w-3.5 h-3.5 text-primary" />
-            </div>
-            <div className="hidden sm:flex flex-col text-left">
-              <span className="text-xs font-semibold text-text-primary leading-tight">
-                {user?.full_name || user?.email || 'Participant'}
-              </span>
-              <span className="text-[10px] text-text-muted leading-tight">
-                {user?.email}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                await logout();
-              }}
-              className="p-1.5 text-text-muted hover:text-status-error hover:bg-status-error/10 rounded-lg transition-colors ml-1"
-              title="Log out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
+                  {isCompleted ? 'Completed' : isInProgress ? 'In Progress' : 'Upcoming'}
+                </span>
+              </div>
+            );
+          })}
         </div>
-      </header>
+      </div>
 
-      <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-6">
-        {/* Workspace Title & Actions */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-surface-border pb-6">
-          <div>
-            <div className="flex items-center gap-2.5 text-xs text-text-muted mb-1">
-              <Users className="w-4 h-4 text-primary" />
-              <span>Participant Portal</span>
-              <span>•</span>
-              <span className="text-text-primary font-medium">My Teams</span>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-text-primary">
-              Enrolled Teams & Submissions
-            </h1>
-            <p className="text-xs text-text-muted mt-1">
-              Manage registered hackathon teams, view linked GitHub repositories, and track project status.
+      {/* Participations: Teams & Project Details */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold text-[#111827]">Your Teams & Submissions</h2>
+          <span className="text-xs text-[#64748B] font-medium">
+            {data.participations.length} {data.participations.length === 1 ? 'Hackathon' : 'Hackathons'}
+          </span>
+        </div>
+
+        {data.participations.length === 0 ? (
+          <div className="bg-white border border-[#E2E8F0] rounded-xl p-8 text-center shadow-xs">
+            <Layers className="w-10 h-10 text-[#94A3B8] mx-auto mb-3" />
+            <h3 className="text-sm font-semibold text-[#111827]">No active hackathons found</h3>
+            <p className="text-xs text-[#64748B] mt-1">
+              You are not enrolled in any hackathon teams yet. Reach out to your event organizer to receive an invitation or join code.
             </p>
           </div>
-
-          <button
-            type="button"
-            onClick={fetchTeams}
-            disabled={isLoading}
-            className="self-start md:self-auto px-3.5 py-2 text-xs font-semibold text-text-primary bg-surface-elevated hover:bg-surface-hover border border-surface-border rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <div className="p-4 rounded-xl bg-status-danger/10 border border-status-danger/20 text-status-danger flex items-center gap-3 text-xs">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Loading State */}
-        {isLoading && (
-          <div className="p-12 text-center text-text-muted space-y-3">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-primary" />
-            <p className="text-xs">Loading your team enrollments...</p>
-          </div>
-        )}
-
-        {/* Empty State */}
-        {!isLoading && teams.length === 0 && !error && (
-          <div className="p-12 text-center rounded-2xl border border-surface-border bg-surface max-w-md mx-auto space-y-4 my-8">
-            <div className="w-12 h-12 rounded-2xl bg-surface-elevated border border-surface-border flex items-center justify-center text-text-muted mx-auto">
-              <Users className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-text-primary">No Enrolled Teams</h3>
-              <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                You are not currently enrolled in any hackathon teams. When you register a team or join via a hackathon invite code, your teams and submission progress will appear here.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Teams Grid */}
-        {!isLoading && teams.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {teams.map((item) => (
+        ) : (
+          <div className="grid grid-cols-1 gap-6">
+            {data.participations.map((team: ParticipantTeamItem) => (
               <div
-                key={item.team_id}
-                className="bg-surface border border-surface-border hover:border-surface-border-hover rounded-2xl p-6 shadow-sm flex flex-col justify-between transition-all"
+                key={team.team_id}
+                className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs flex flex-col gap-6"
               >
-                <div className="space-y-4">
-                  {/* Top line: Organization & Hackathon Status */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium text-text-muted truncate">
-                      {item.organization_name}
-                    </span>
-                    <StatusBadge status={item.hackathon_status} size="sm" />
-                  </div>
-
-                  {/* Team Title & Hackathon */}
+                {/* Header Info */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#E2E8F0] gap-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-bold text-text-primary">
-                        {item.team_name}
-                      </h3>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-primary/10 text-primary border border-primary/20">
-                        {item.role_in_team}
+                      <span className="text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded-md border border-[#BFDBFE]">
+                        {team.organization_name}
                       </span>
+                      <span className="text-xs text-[#64748B]">Role: <strong className="capitalize text-[#111827]">{team.role_in_team}</strong></span>
                     </div>
-                    <p className="text-xs text-text-muted mt-1 flex items-center gap-1.5">
-                      <Trophy className="w-3.5 h-3.5 text-primary" />
-                      <span>{item.hackathon_title}</span>
-                    </p>
+                    <h3 className="text-xl font-bold text-[#111827] mt-1.5">
+                      {team.hackathon_title}
+                    </h3>
                   </div>
 
-                  {/* Join Code Chip */}
-                  <div className="flex items-center justify-between p-3 bg-surface-elevated/40 rounded-xl border border-surface-border/60 text-xs">
-                    <span className="text-text-muted text-[11px]">Team Join Code:</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold tracking-wider text-text-primary">
-                        {item.join_code}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleCopyCode(item.join_code)}
-                        className="p-1 hover:bg-surface-elevated rounded text-text-muted hover:text-text-primary transition-colors"
-                        title="Copy Join Code"
-                      >
-                        {copiedCode === item.join_code ? (
-                          <Check className="w-3.5 h-3.5 text-status-success" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Submission Details */}
-                  <div className="pt-3 border-t border-surface-border/60 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-text-primary">Project Submission</span>
-                      {item.submission ? (
-                        <StatusBadge status={item.submission.status} size="sm" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#64748B]">Team Join Code:</span>
+                    <button
+                      onClick={() => handleCopyCode(team.join_code)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-mono font-medium text-[#111827] hover:bg-[#F1F5F9] transition-colors"
+                      title="Copy join code to share with teammates"
+                    >
+                      <span>{team.join_code}</span>
+                      {copiedCode === team.join_code ? (
+                        <Check className="w-3.5 h-3.5 text-[#16A34A]" />
                       ) : (
-                        <span className="text-[11px] text-text-muted italic">Not Created</span>
+                        <Copy className="w-3.5 h-3.5 text-[#64748B]" />
                       )}
-                    </div>
+                    </button>
+                  </div>
+                </div>
 
-                    {item.submission ? (
-                      <div className="p-3.5 bg-surface-elevated/30 rounded-xl border border-surface-border/60 space-y-2 text-xs">
-                        <div className="font-medium text-text-primary">
-                          {item.submission.title}
+                {/* Team Details & Submission Block */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left: Team Members */}
+                  <div className="space-y-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">
+                      Team: <strong className="text-[#111827] normal-case">{team.team_name}</strong>
+                    </span>
+                    <div className="p-4 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                      <span className="text-xs font-medium text-[#475569] block">Roster ({(team.team_members || []).length} members):</span>
+                      <div className="flex flex-wrap gap-2">
+                        {(team.team_members || []).map((member, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-white border border-[#E2E8F0] text-[#111827]"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#2563EB]" />
+                            {member}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: Submission Info */}
+                  <div className="space-y-3">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-[#64748B]">
+                      Project Submission
+                    </span>
+                    {team.submission ? (
+                      <div className="p-4 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold text-[#111827] truncate">
+                            {team.submission.title}
+                          </span>
+                          <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#F0FDF4] text-[#16A34A] border border-[#BBF7D0]">
+                            {team.submission.connection_status}
+                          </span>
                         </div>
 
-                        {item.submission.repository_owner && item.submission.repository_name ? (
-                          <div className="space-y-1 pt-1 border-t border-surface-border/40">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-1.5 font-mono text-[11px] text-text-primary">
-                                <Github className="w-3.5 h-3.5 text-text-muted" />
-                                <span>
-                                  {item.submission.repository_owner}/{item.submission.repository_name}
-                                </span>
-                              </div>
-                              <span
-                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold font-mono ${
-                                  item.submission.connection_status === 'verified'
-                                    ? 'bg-status-success/10 text-status-success border border-status-success/20'
-                                    : 'bg-status-warning/10 text-status-warning border border-status-warning/20'
-                                }`}
-                              >
-                                {item.submission.connection_status}
-                              </span>
-                            </div>
-
-                            {item.submission.default_branch && (
-                              <div className="flex items-center gap-1 font-mono text-[10px] text-text-muted">
-                                <GitBranch className="w-3 h-3" />
-                                <span>branch: {item.submission.default_branch}</span>
-                              </div>
-                            )}
-
-                            {item.submission.verified_commit_sha && (
-                              <div className="text-[10px] font-mono text-text-muted truncate">
-                                commit: {item.submission.verified_commit_sha.slice(0, 7)}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-text-muted text-[11px] italic">
-                            No GitHub repository linked to this submission yet.
-                          </div>
+                        {team.submission.description && (
+                          <p className="text-xs text-[#64748B] line-clamp-2">
+                            {team.submission.description}
+                          </p>
                         )}
+
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-[#64748B] pt-1 border-t border-[#E2E8F0]/80">
+                          <a
+                            href={team.submission.repository_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-[#2563EB] hover:underline font-medium"
+                          >
+                            <Github className="w-3.5 h-3.5" />
+                            <span>{team.submission.repository_name || 'Repository'}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                          {team.submission.default_branch && (
+                            <span className="inline-flex items-center gap-1">
+                              <GitBranch className="w-3.5 h-3.5 text-[#64748B]" />
+                              {team.submission.default_branch}
+                            </span>
+                          )}
+                          {team.submission.verified_commit_sha && (
+                            <span className="font-mono text-[11px] bg-white px-1.5 py-0.5 rounded border border-[#E2E8F0]">
+                              {team.submission.verified_commit_sha.slice(0, 7)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ) : (
-                      <div className="p-3 bg-surface-elevated/20 rounded-xl border border-dashed border-surface-border text-center text-xs text-text-muted">
-                        No submission submitted yet.
+                      <div className="p-4 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-center">
+                        <p className="text-xs text-[#64748B]">No project submitted yet for this hackathon.</p>
                       </div>
                     )}
                   </div>
                 </div>
 
-                {/* Footer / Meta */}
-                {item.submission_deadline && (
-                  <div className="pt-4 mt-4 border-t border-surface-border/60 flex items-center justify-between text-[11px] text-text-muted">
-                    <span className="flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>Deadline:</span>
-                    </span>
-                    <span className="font-medium text-text-primary">
-                      {new Date(item.submission_deadline).toLocaleDateString()}
+                {/* Footer Quick Links */}
+                <div className="flex flex-wrap items-center justify-between pt-3 border-t border-[#E2E8F0] text-xs text-[#64748B] gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#2563EB]" />
+                    <span>
+                      {team.submission_deadline
+                        ? `Submission Deadline: ${new Date(team.submission_deadline).toLocaleString()}`
+                        : 'Submission deadline TBA by organizer'}
                     </span>
                   </div>
-                )}
+
+                  <div className="flex items-center gap-3">
+                    <Link
+                      href={`/participant/performance?hackathon_id=${team.hackathon_id}`}
+                      className="font-medium text-[#2563EB] hover:underline inline-flex items-center gap-1"
+                    >
+                      View Detailed Feedback
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </Link>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         )}
+      </div>
+
+      {/* Deadlines & Updates Row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Deadlines */}
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+            <h3 className="text-sm font-bold text-[#111827]">Upcoming Deadlines</h3>
+            <Clock className="w-4 h-4 text-[#2563EB]" />
+          </div>
+
+          {data.upcoming_deadlines.length === 0 ? (
+            <p className="text-xs text-[#64748B] py-3 text-center">No upcoming deadlines.</p>
+          ) : (
+            <div className="space-y-3">
+              {data.upcoming_deadlines.map((item, idx) => (
+                <div key={idx} className="flex items-start justify-between p-3 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0]">
+                  <div>
+                    <span className="text-xs font-semibold text-[#111827] block">{item.title}</span>
+                    <span className="text-[11px] text-[#64748B] mt-0.5 block">{item.hackathon}</span>
+                  </div>
+                  <span className="text-[11px] font-semibold text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded border border-[#FDE68A] shrink-0">
+                    {new Date(item.due_date).toLocaleDateString()}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Updates */}
+        <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[#E2E8F0]">
+            <h3 className="text-sm font-bold text-[#111827]">Recent Updates</h3>
+            <Link
+              href="/participant/notifications"
+              className="text-xs font-medium text-[#2563EB] hover:underline"
+            >
+              All Notifications
+            </Link>
+          </div>
+
+          {data.recent_updates.length === 0 ? (
+            <p className="text-xs text-[#64748B] py-3 text-center">No recent updates.</p>
+          ) : (
+            <div className="space-y-3">
+              {data.recent_updates.map((item, idx) => (
+                <div key={idx} className="p-3 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-[#111827]">{item.title}</span>
+                    <span className="text-[10px] text-[#64748B]">
+                      {new Date(item.timestamp).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#64748B] leading-snug">{item.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
