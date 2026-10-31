@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import time
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import JSONResponse
 
@@ -31,7 +32,22 @@ async def get_health(response: Response) -> HealthResponse:
     # Core API internal latency
     api_latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-    async def _check_redis():
+    async def _check_ollama() -> tuple:
+        try:
+            o_start = time.perf_counter()
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags")
+            o_lat = round((time.perf_counter() - o_start) * 1000, 2)
+            if resp.status_code == 200:
+                model_count = len(resp.json().get("models", []))
+                return True, o_lat, f"Ollama reachable — {model_count} model(s) available"
+            return False, o_lat, f"Ollama returned HTTP {resp.status_code}"
+        except httpx.TimeoutException:
+            return False, None, "Ollama probe timed out after 2s"
+        except Exception as exc:
+            return False, None, f"Ollama unreachable: {type(exc).__name__}"
+
+    async def _check_redis() -> tuple:
         try:
             r_start = time.perf_counter()
             r_client = core_async_redis.get_redis_client()
@@ -41,14 +57,17 @@ async def get_health(response: Response) -> HealthResponse:
         except Exception as exc:
             return False, None, f"Redis connection check failed: {str(exc)}"
 
-    # Run live database and Redis dependency checks concurrently
-    (db_healthy, db_latency, db_detail), (redis_healthy, redis_latency, redis_detail) = await asyncio.gather(
+    # Run live database, Redis, and Ollama checks concurrently
+    (db_healthy, db_latency, db_detail), (redis_healthy, redis_latency, redis_detail), (ollama_healthy, ollama_latency, ollama_detail) = await asyncio.gather(
         check_database_connection(timeout_seconds=2.0),
         _check_redis(),
+        _check_ollama(),
     )
+
 
     db_status: HealthStatus = "healthy" if db_healthy else "unhealthy"
     redis_status: HealthStatus = "healthy" if redis_healthy else "unhealthy"
+    ollama_status: HealthStatus = "healthy" if ollama_healthy else "unhealthy"
 
     services = {
         "api": ServiceCheck(
@@ -72,8 +91,9 @@ async def get_health(response: Response) -> HealthResponse:
             details="Celery broker available via Redis" if redis_healthy else redis_detail,
         ),
         "ollama": ServiceCheck(
-            status="unknown",
-            details="Ollama client inference pipeline active in Phase 4",
+            status=ollama_status,
+            latency_ms=ollama_latency,
+            details=ollama_detail,
         ),
     }
 
@@ -91,6 +111,7 @@ async def get_health(response: Response) -> HealthResponse:
         timestamp=datetime.now(timezone.utc),
         services=services,
     )
+
 
 
 @router.get("/health/live", response_model=LivenessResponse, summary="Kubernetes liveness probe")

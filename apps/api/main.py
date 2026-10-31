@@ -37,6 +37,7 @@ from apps.api.modules.users.router import router as users_router
 from apps.api.modules.integrations.webhook_router import router as webhook_router
 from apps.api.modules.dashboard.router import router as dashboard_router
 from apps.api.modules.evaluations.announcements_router import router as announcements_router
+from apps.api.modules.ai_ops.router import router as ai_ops_router
 
 
 @asynccontextmanager
@@ -107,6 +108,7 @@ def create_app() -> FastAPI:
     app.include_router(webhook_router, prefix=settings.API_V1_PREFIX)
     app.include_router(dashboard_router, prefix=settings.API_V1_PREFIX)
     app.include_router(announcements_router, prefix=settings.API_V1_PREFIX)
+    app.include_router(ai_ops_router, prefix=settings.API_V1_PREFIX)
 
     @app.get("/metrics", tags=["Observability"])
     async def metrics_root(request: Request, format: Optional[str] = None) -> Response:

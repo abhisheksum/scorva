@@ -1458,4 +1458,70 @@ export const api = {
     const qs = placement ? `?placement=${encodeURIComponent(placement)}` : '';
     return fetchApi<AdminAnnouncementResponse[]>(`/api/v1/announcements${qs}`, options);
   },
+
+  // AI Operations
+  getOllamaHealth: async (): Promise<import('@/types/api').OllamaHealthResponse> => {
+    return fetchApi<import('@/types/api').OllamaHealthResponse>('/api/v1/admin/ai/health');
+  },
+
+  listOllamaModels: async (): Promise<import('@/types/api').OllamaModel[]> => {
+    return fetchApi<import('@/types/api').OllamaModel[]>('/api/v1/admin/ai/models');
+  },
+
+  getAiMetrics: async (): Promise<import('@/types/api').AiMetricsResponse> => {
+    return fetchApi<import('@/types/api').AiMetricsResponse>('/api/v1/admin/ai/metrics');
+  },
+
+  getAdminEvaluationJobs: async (params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<import('@/types/api').AdminEvalJobsResponse> => {
+    const qs = new URLSearchParams();
+    if (params?.page) qs.set('page', String(params.page));
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.status) qs.set('status', params.status);
+    const query = qs.toString() ? `?${qs.toString()}` : '';
+    return fetchApi<import('@/types/api').AdminEvalJobsResponse>(`/api/v1/admin/ai/jobs${query}`);
+  },
+
+  runAiPlayground: async (
+    data: import('@/types/api').PlaygroundRequest,
+    options?: RequestInit
+  ): Promise<import('@/types/api').PlaygroundResponse> => {
+    return fetchApi<import('@/types/api').PlaygroundResponse>('/api/v1/admin/ai/playground', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      ...options,
+    });
+  },
+
+  getModelCatalog: async (): Promise<import('@/types/api').CatalogModelInfo[]> => {
+    return fetchApi<import('@/types/api').CatalogModelInfo[]>('/api/v1/admin/ai/models/catalog');
+  },
+
+  pullModel: async (modelName: string): Promise<import('@/types/api').ModelPullStatusResponse> => {
+    return fetchApi<import('@/types/api').ModelPullStatusResponse>('/api/v1/admin/ai/models/pull', {
+      method: 'POST',
+      body: JSON.stringify({ model_name: modelName }),
+    });
+  },
+
+  getPullStatus: async (): Promise<import('@/types/api').ModelPullStatusResponse[]> => {
+    return fetchApi<import('@/types/api').ModelPullStatusResponse[]>('/api/v1/admin/ai/models/pull/status');
+  },
+
+  cancelModelPull: async (taskId: string): Promise<import('@/types/api').ModelPullStatusResponse> => {
+    return fetchApi<import('@/types/api').ModelPullStatusResponse>(`/api/v1/admin/ai/models/pull/${encodeURIComponent(taskId)}/cancel`, {
+      method: 'POST',
+    });
+  },
+
+  deleteModel: async (modelName: string): Promise<{ status: string; message: string }> => {
+    return fetchApi<{ status: string; message: string }>(`/api/v1/admin/ai/models/${encodeURIComponent(modelName)}?confirm=true`, {
+      method: 'DELETE',
+    });
+  },
 };
+
+

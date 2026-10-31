@@ -1349,6 +1349,131 @@ export interface VerifyParticipantGitHubResponse {
   verified_by_user?: string | null;
 }
 
+// ==========================================
+// AI Operations Types (AI Ops Dashboard)
+// ==========================================
+
+export interface OllamaModel {
+  name: string;
+  size: number;
+  parameter_size: string | null;
+  quantization_level: string | null;
+  modified_at: string | null;
+  digest: string | null;
+}
+
+export interface OllamaHealthResponse {
+  reachable: boolean;
+  latency_ms: number | null;
+  version?: string | null;
+  installed_model_count: number;
+  installed_models: OllamaModel[];
+  // alias for backward-compatibility with UI
+  model_count?: number;
+  models?: OllamaModel[];
+  base_url: string;
+  error?: string | null;
+}
+
+export interface AiMetricsResponse {
+  total_provider_calls: number;
+  successful_calls: number;
+  failed_calls: number;
+  provider_model_breakdown: Record<string, number>;
+  eval_execution_duration: {
+    count: number;
+    sum_seconds: number;
+    avg_seconds: number | null;
+  };
+  queue_wait_duration: {
+    count: number;
+    sum_seconds: number;
+    avg_seconds: number | null;
+  };
+  jobs_by_status: Record<string, number>;
+  unavailable_metrics: string[];
+  // Legacy aliases
+  provider_calls?: Record<string, number>;
+  eval_duration_avg_seconds?: number | null;
+  eval_duration_count?: number;
+  eval_duration_sum_seconds?: number;
+  queue_wait_avg_seconds?: number | null;
+  queue_wait_count?: number;
+}
+
+export interface AdminEvalJobItem {
+  id: string;
+  organization_id: string;
+  hackathon_id: string;
+  submission_id: string;
+  status: string;
+  current_stage: string | null;
+  attempts_count: number;
+  max_attempts: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  cancellation_requested: boolean;
+}
+
+export interface AdminEvalJobsResponse {
+  items: AdminEvalJobItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface PlaygroundRequest {
+  model: string;
+  prompt: string;
+  temperature?: number;
+  max_tokens?: number;
+}
+
+export interface PlaygroundResponse {
+  model: string;
+  response: string;
+  duration_ms: number;
+  token_usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_eval_duration_ms?: number;
+    eval_duration_ms?: number;
+  };
+  success: boolean;
+  error?: string | null;
+}
+
+export interface CatalogModelInfo {
+  name: string;
+  description: string;
+  parameter_size: string;
+  approx_size_bytes: number;
+  tags: string[];
+  category: string;
+}
+
+export interface ModelPullRequest {
+  model_name: string;
+}
+
+export interface ModelPullStatusResponse {
+  task_id: string;
+  model_name: string;
+  status: string;
+  total_bytes: number;
+  completed_bytes: number;
+  progress_percentage: number;
+  current_step?: string | null;
+  started_at: string;
+  completed_at?: string | null;
+  initiated_by_email: string;
+  error?: string | null;
+}
+
+
+
+
 
 
 
