@@ -170,7 +170,7 @@ if [ "$START_API" -eq 1 ]; then
         source "${PROJECT_ROOT}/.env"
         set +a
 
-        setsid "${PROJECT_ROOT}/.venv/bin/python" -m uvicorn apps.api.main:app \
+        nohup "${PROJECT_ROOT}/.venv/bin/python" -m uvicorn apps.api.main:app \
             --reload \
             --host 0.0.0.0 \
             --port "${API_PORT}" \
@@ -227,7 +227,7 @@ if [ "$START_WEB" -eq 1 ]; then
         log_warn "Port ${WEB_PORT} is already in use by PID ${CONFLICT_PID:-unknown}. Reusing existing listener."
     else
         log_info "Launching Next.js frontend (development mode)..."
-        setsid npm --prefix "${PROJECT_ROOT}/apps/web" run dev \
+        nohup npm --prefix "${PROJECT_ROOT}/apps/web" run dev \
             < /dev/null > "${WEB_LOG_FILE}" 2>&1 &
         WEB_PID=$!
         echo "$WEB_PID" > "${WEB_PID_FILE}"

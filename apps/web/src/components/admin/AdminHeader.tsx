@@ -184,10 +184,10 @@ export const AdminHeader: React.FC<AdminHeaderProps> = ({ onOpenMobileMenu }) =>
         {/* Live Backend Health Indicator */}
         <HealthIndicator />
 
-        {/* Notification Bell */}
+        {/* Announcements Bell */}
         <button
           type="button"
-          aria-label="View notifications"
+          aria-label="View announcements"
           className="relative p-2 text-text-muted hover:text-text-primary hover:bg-surface-elevated rounded-lg transition-colors"
         >
           <Bell className="w-4 h-4" />

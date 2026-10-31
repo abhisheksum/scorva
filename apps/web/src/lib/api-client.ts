@@ -90,6 +90,8 @@ import {
   SaveParticipantPatResponse,
   ParticipantGitHubSettingsResponse,
   VerifyParticipantGitHubResponse,
+  AdminAnnouncementResponse,
+  CreateAdminAnnouncementRequest,
 } from '@/types/api';
 
 const API_BASE_URL =
@@ -1420,5 +1422,40 @@ export const api = {
         method: 'POST',
       }
     );
+  },
+
+  // ==========================================
+  // Platform Announcements (Admin & Cross-Role)
+  // ==========================================
+  getAdminAnnouncements: async (options?: RequestInit): Promise<AdminAnnouncementResponse[]> => {
+    return fetchApi<AdminAnnouncementResponse[]>('/api/v1/admin/announcements', options);
+  },
+
+  createAdminAnnouncement: async (
+    data: CreateAdminAnnouncementRequest
+  ): Promise<AdminAnnouncementResponse> => {
+    return fetchApi<AdminAnnouncementResponse>('/api/v1/admin/announcements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deleteAdminAnnouncement: async (
+    announcementId: string
+  ): Promise<{ status: string; message: string }> => {
+    return fetchApi<{ status: string; message: string }>(
+      `/api/v1/admin/announcements/${encodeURIComponent(announcementId)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  },
+
+  getUserAnnouncements: async (
+    placement?: string,
+    options?: RequestInit
+  ): Promise<AdminAnnouncementResponse[]> => {
+    const qs = placement ? `?placement=${encodeURIComponent(placement)}` : '';
+    return fetchApi<AdminAnnouncementResponse[]>(`/api/v1/announcements${qs}`, options);
   },
 };

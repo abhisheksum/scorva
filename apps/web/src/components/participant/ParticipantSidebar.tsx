@@ -9,6 +9,7 @@ import {
   BarChart3,
   CheckSquare,
   Bell,
+  Megaphone,
   LifeBuoy,
   Settings,
   LogOut,
@@ -56,11 +57,12 @@ export function ParticipantSidebar({
       exact: false,
     },
     {
-      name: 'Notifications',
-      href: '/participant/notifications',
-      icon: Bell,
+      name: 'Announcements',
+      href: '/participant/announcements',
+      icon: Megaphone,
       exact: false,
       badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : null,
+      matches: ['/participant/announcements', '/participant/notifications'],
     },
     {
       name: 'Support Center',
@@ -76,7 +78,10 @@ export function ParticipantSidebar({
     },
   ];
 
-  const isItemActive = (href: string, exact: boolean) => {
+  const isItemActive = (href: string, exact: boolean, matches?: string[]) => {
+    if (matches && matches.some((p) => pathname.startsWith(p))) {
+      return true;
+    }
     if (exact) {
       return pathname === href;
     }
@@ -123,7 +128,7 @@ export function ParticipantSidebar({
           Participant Workspace
         </div>
         {navItems.map((item) => {
-          const active = isItemActive(item.href, item.exact);
+          const active = isItemActive(item.href, item.exact, item.matches);
           const Icon = item.icon;
           return (
             <Link

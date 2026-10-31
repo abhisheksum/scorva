@@ -25,7 +25,13 @@ export default function ParticipantLayout({
   const refreshNotificationCount = useCallback(async () => {
     try {
       const data = await api.getParticipantNotifications();
-      setUnreadCount(data.unread_count);
+      const announcements = data.notifications.filter((n) => n.type === 'announcement');
+      if (announcements.length > 0) {
+        const unreadAnnouncements = announcements.filter((n) => !n.is_read).length;
+        setUnreadCount(unreadAnnouncements);
+      } else {
+        setUnreadCount(data.unread_count);
+      }
     } catch {
       // Non-blocking
     }

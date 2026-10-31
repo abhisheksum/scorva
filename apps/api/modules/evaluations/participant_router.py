@@ -33,6 +33,7 @@ from apps.api.modules.evaluations.models import (
 from apps.api.modules.hackathons.models import Hackathon
 from apps.api.modules.organizations.models import Organization
 from apps.api.modules.users.models import User
+from apps.api.modules.evaluations.announcement_models import Announcement
 
 router = APIRouter(prefix="/participant", tags=["Participant Workspace"])
 
@@ -1004,6 +1005,40 @@ async def list_participant_notifications(
                     type="system",
                     is_read=read_states.get(results_key, False),
                     action_url="/participant/performance",
+                )
+            )
+
+    # 3. Super Admin Announcements from centralized database
+    ann_stmt = (
+        select(Announcement)
+        .where(Announcement.status == "active")
+        .order_by(Announcement.created_at.desc())
+    )
+    ann_rows = (await db.execute(ann_stmt)).scalars().all()
+    uid_str = str(user.id)
+
+    for ann in ann_rows:
+        rec_ids = ann.recipient_ids or []
+        is_targeted = False
+
+        if rec_ids:
+            if uid_str in rec_ids:
+                is_targeted = True
+        else:
+            if ann.target_role in ("all", "participants"):
+                is_targeted = True
+
+        if is_targeted:
+            ann_key = f"ann_{ann.id}"
+            items.append(
+                ParticipantNotificationItem(
+                    id=ann_key,
+                    title=ann.title,
+                    description=ann.content,
+                    created_at=ann.created_at.isoformat(),
+                    type="announcement",
+                    is_read=read_states.get(ann_key, False),
+                    action_url=ann.action_url or "/participant/announcements",
                 )
             )
 

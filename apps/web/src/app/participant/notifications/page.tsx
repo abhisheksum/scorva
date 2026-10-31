@@ -3,29 +3,26 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Bell,
+  Megaphone,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
   CheckCheck,
-  Users,
-  Trophy,
-  GitCommit,
-  LifeBuoy,
-  MessageSquare,
+  Calendar,
   Sparkles,
+  ExternalLink,
 } from 'lucide-react';
 import { api, ApiClientError } from '@/lib/api-client';
 import { NotificationListResponse, ParticipantNotificationItem } from '@/types/api';
 
-export default function ParticipantNotificationsPage() {
+export default function ParticipantAnnouncementsPage() {
   const [data, setData] = useState<NotificationListResponse | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
 
-  const fetchNotifications = async () => {
+  const fetchAnnouncements = async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -35,7 +32,7 @@ export default function ParticipantNotificationsPage() {
       if (err instanceof ApiClientError) {
         setError(err.message);
       } else {
-        setError('Failed to load notifications.');
+        setError('Failed to load announcements.');
       }
     } finally {
       setIsLoading(false);
@@ -43,8 +40,20 @@ export default function ParticipantNotificationsPage() {
   };
 
   useEffect(() => {
-    fetchNotifications();
+    fetchAnnouncements();
   }, []);
+
+  // Filter strictly for announcements
+  const allAnnouncements = (data?.notifications || []).filter(
+    (n) => n.type === 'announcement'
+  );
+
+  const unreadAnnouncementsCount = allAnnouncements.filter((n) => !n.is_read).length;
+
+  const filteredAnnouncements = allAnnouncements.filter((n) => {
+    if (filter === 'unread') return !n.is_read;
+    return true;
+  });
 
   const handleMarkRead = async (id: string) => {
     try {
@@ -60,7 +69,7 @@ export default function ParticipantNotificationsPage() {
         };
       });
     } catch (err) {
-      console.error('Failed to mark read', err);
+      console.error('Failed to mark announcement as read', err);
     }
   };
 
@@ -77,29 +86,9 @@ export default function ParticipantNotificationsPage() {
         };
       });
     } catch (err) {
-      console.error('Failed to mark all read', err);
+      console.error('Failed to mark all announcements as read', err);
     } finally {
       setIsMarkingAll(false);
-    }
-  };
-
-  const filteredNotifications = (data?.notifications || []).filter((n) => {
-    if (filter === 'unread') return !n.is_read;
-    return true;
-  });
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'team':
-        return <Users className="w-4 h-4 text-[#2563EB]" />;
-      case 'submission':
-        return <GitCommit className="w-4 h-4 text-[#16A34A]" />;
-      case 'evaluation':
-        return <Trophy className="w-4 h-4 text-[#D97706]" />;
-      case 'support':
-        return <LifeBuoy className="w-4 h-4 text-[#7C3AED]" />;
-      default:
-        return <Bell className="w-4 h-4 text-[#64748B]" />;
     }
   };
 
@@ -109,19 +98,19 @@ export default function ParticipantNotificationsPage() {
       <div className="bg-white border border-[#E2E8F0] rounded-xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
         <div>
           <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-[#2563EB]">
-            <Bell className="w-4 h-4" />
-            Inbox & Alerts
+            <Megaphone className="w-4 h-4" />
+            Broadcasts & Updates
           </div>
           <h1 className="text-xl sm:text-2xl font-bold text-[#111827]">
-            Participant Notifications
+            Announcements
           </h1>
           <p className="text-xs text-[#64748B] mt-1">
-            Real-time updates regarding your team, repository evaluations, deadlines, and support replies.
+            Official announcements, timeline changes, and competition broadcasts from hackathon organizers.
           </p>
         </div>
 
         <div className="flex items-center gap-3 shrink-0">
-          {data && data.unread_count > 0 && (
+          {unreadAnnouncementsCount > 0 && (
             <button
               onClick={handleMarkAllRead}
               disabled={isMarkingAll}
@@ -141,7 +130,7 @@ export default function ParticipantNotificationsPage() {
                   : 'text-[#64748B] hover:text-[#111827]'
               }`}
             >
-              All ({data?.notifications.length || 0})
+              All ({allAnnouncements.length})
             </button>
             <button
               onClick={() => setFilter('unread')}
@@ -151,7 +140,7 @@ export default function ParticipantNotificationsPage() {
                   : 'text-[#64748B] hover:text-[#111827]'
               }`}
             >
-              Unread ({data?.unread_count || 0})
+              Unread ({unreadAnnouncementsCount})
             </button>
           </div>
         </div>
@@ -160,29 +149,29 @@ export default function ParticipantNotificationsPage() {
       {isLoading ? (
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-16 flex flex-col items-center justify-center text-center shadow-xs">
           <RefreshCw className="w-8 h-8 text-[#2563EB] animate-spin mb-3" />
-          <p className="text-sm font-semibold text-[#111827]">Loading notifications...</p>
+          <p className="text-sm font-semibold text-[#111827]">Loading announcements...</p>
         </div>
       ) : error ? (
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-8 text-center max-w-lg mx-auto shadow-xs">
           <AlertCircle className="w-10 h-10 text-[#DC2626] mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-[#111827]">Unable to load notifications</h3>
+          <h3 className="text-sm font-semibold text-[#111827]">Unable to load announcements</h3>
           <p className="text-xs text-[#64748B] mt-1">{error}</p>
         </div>
-      ) : filteredNotifications.length === 0 ? (
+      ) : filteredAnnouncements.length === 0 ? (
         <div className="bg-white border border-[#E2E8F0] rounded-xl p-12 text-center max-w-xl mx-auto shadow-xs space-y-3">
           <CheckCircle2 className="w-10 h-10 text-[#16A34A] mx-auto mb-2" />
           <h3 className="text-base font-bold text-[#111827]">
-            {filter === 'unread' ? 'All caught up!' : 'No notifications'}
+            {filter === 'unread' ? 'All caught up!' : 'No announcements yet'}
           </h3>
           <p className="text-xs text-[#64748B]">
             {filter === 'unread'
-              ? 'You have read all of your recent alerts.'
-              : 'There are no notifications posted to your account yet.'}
+              ? 'You have read all official announcements.'
+              : 'There are no announcements broadcast to participants at this time.'}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredNotifications.map((item) => (
+          {filteredAnnouncements.map((item) => (
             <div
               key={item.id}
               className={`p-5 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
@@ -199,7 +188,11 @@ export default function ParticipantNotificationsPage() {
                       : 'bg-[#F8FAFC] border-[#E2E8F0]'
                   }`}
                 >
-                  {getTypeIcon(item.type)}
+                  <Megaphone
+                    className={`w-4 h-4 ${
+                      !item.is_read ? 'text-[#2563EB]' : 'text-[#64748B]'
+                    }`}
+                  />
                 </div>
 
                 <div className="space-y-1">
@@ -208,14 +201,15 @@ export default function ParticipantNotificationsPage() {
                     {!item.is_read && (
                       <span className="w-2 h-2 rounded-full bg-[#2563EB]" />
                     )}
-                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-[#F8FAFC] border border-[#E2E8F0] text-[#64748B]">
-                      {item.type}
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-[#EFF6FF] border border-[#BFDBFE] text-[#2563EB]">
+                      Announcement
                     </span>
                   </div>
                   <p className="text-xs text-[#475569] leading-relaxed">{item.description}</p>
-                  <span className="text-[10px] text-[#94A3B8] block">
-                    {new Date(item.created_at).toLocaleString()}
-                  </span>
+                  <div className="flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
+                    <Calendar className="w-3 h-3 text-[#94A3B8]" />
+                    <span>{new Date(item.created_at).toLocaleString()}</span>
+                  </div>
                 </div>
               </div>
 
@@ -223,9 +217,10 @@ export default function ParticipantNotificationsPage() {
                 {item.action_url && (
                   <Link
                     href={item.action_url}
-                    className="px-3 py-1.5 text-xs font-semibold text-[#2563EB] hover:bg-[#EFF6FF] rounded-lg transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-[#2563EB] hover:bg-[#EFF6FF] rounded-lg transition-colors"
                   >
-                    View
+                    <span>View Details</span>
+                    <ExternalLink className="w-3 h-3" />
                   </Link>
                 )}
 

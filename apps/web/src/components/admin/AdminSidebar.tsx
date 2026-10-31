@@ -14,7 +14,7 @@ import {
   Activity,
   ShieldAlert,
   LifeBuoy,
-  Bell,
+  Megaphone,
   Blocks,
   Settings,
   X,
@@ -104,10 +104,10 @@ const navigationSections: NavSection[] = [
         priority: 'P1',
       },
       {
-        title: 'Notifications',
+        title: 'Announcements',
         href: '/admin/notifications',
-        icon: Bell,
-        priority: 'P1',
+        icon: Megaphone,
+        priority: 'P0',
       },
       {
         title: 'Integrations',

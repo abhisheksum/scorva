@@ -1193,6 +1193,32 @@ export interface ParticipantNotificationItem {
   action_url?: string | null;
 }
 
+export interface AdminAnnouncementResponse {
+  id: string;
+  title: string;
+  content: string;
+  target_role: string;
+  placement: string;
+  priority: string;
+  recipient_ids: string[];
+  recipient_count: number;
+  author_name: string;
+  created_at: string;
+  status: string;
+  action_url?: string | null;
+  is_read?: boolean;
+}
+
+export interface CreateAdminAnnouncementRequest {
+  title: string;
+  content: string;
+  target_role: string;
+  placement: string;
+  priority: string;
+  recipient_ids?: string[];
+  action_url?: string;
+}
+
 export interface NotificationListResponse {
   unread_count: number;
   notifications: ParticipantNotificationItem[];
