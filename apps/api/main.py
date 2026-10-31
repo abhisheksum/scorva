@@ -37,7 +37,7 @@ from apps.api.modules.users.router import router as users_router
 from apps.api.modules.integrations.webhook_router import router as webhook_router
 from apps.api.modules.dashboard.router import router as dashboard_router
 from apps.api.modules.evaluations.announcements_router import router as announcements_router
-from apps.api.modules.ai_ops.router import router as ai_ops_router
+from apps.api.modules.ai_ops.router import router as ai_ops_router, reconcile_interrupted_pull_tasks, shutdown_active_pull_tasks
 
 
 @asynccontextmanager
@@ -50,7 +50,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.HOST,
         settings.PORT,
     )
+    # Reconcile any interrupted model pull tasks after server/worker restart
+    try:
+        await reconcile_interrupted_pull_tasks()
+    except Exception as exc:
+        logger.warning("Failed to reconcile model pull tasks on startup: %s", exc)
+
     yield
+
+    logger.info("Gracefully terminating active model pull jobs...")
+    try:
+        await shutdown_active_pull_tasks()
+    except Exception as exc:
+        logger.warning("Error shutting down active model pull tasks: %s", exc)
+
     logger.info("Closing Redis connection pool...")
     await close_redis_client()
     logger.info("Shutting down Scorva API service.")

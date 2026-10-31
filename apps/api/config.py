@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     S3_ENDPOINT_URL: str = "http://localhost:9000"
 
+    # AI Model Lifecycle & Resource Limits
+    AI_MODEL_MAX_CONCURRENT_PULLS: int = 1
+    AI_MODEL_MAX_DOWNLOAD_SIZE_BYTES: int = 50 * 1024 * 1024 * 1024  # 50 GB ceiling
+    AI_MODEL_MIN_DISK_FREE_BYTES: int = 5 * 1024 * 1024 * 1024        # 5 GB free space reserve
+
     @field_validator("CORS_ORIGINS", "TRUSTED_PROXIES", mode="before")
     @classmethod
     def assemble_origins_and_proxies(cls, v: Union[str, List[str]]) -> List[str]:

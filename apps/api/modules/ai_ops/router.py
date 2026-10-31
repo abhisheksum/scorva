@@ -16,7 +16,10 @@ Design invariants:
 """
 
 import asyncio
+import json as pyjson
 import logging
+import re
+import shutil
 import time
 from typing import Any, Dict, List, Optional
 import uuid
@@ -29,11 +32,14 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.api.config import settings
-from apps.api.core.database import get_db_session
+from apps.api.core.database import AsyncSessionLocal, get_db_session
 from apps.api.core.metrics import metrics_collector
+from apps.api.core.redis import get_redis_client
 from apps.api.core.ssrf_guard import SSRFViolationError, create_profile_b_client, validate_profile_b_url
 from apps.api.dependencies import require_super_admin
-from apps.api.modules.evaluations.models import EvaluationJob
+from apps.api.modules.audit.models import AuditOutcome
+from apps.api.modules.audit.service import record_audit_event
+from apps.api.modules.evaluations.models import EvaluationJob, SubmissionSnapshot
 from apps.api.modules.users.models import User
 
 logger = logging.getLogger("scorva.ai_ops")
@@ -210,11 +216,149 @@ TRUSTED_CATALOG: List[CatalogModelInfo] = [
     ),
 ]
 
-# In-memory tracking of active/recent model pull tasks (protected by Lock)
+# ──────────────────────────────────────────────
+# Distributed State, Coordination & Locking Constants
+# ──────────────────────────────────────────────
+
+REDIS_PULL_PREFIX = "ai:model:pull:"
+REDIS_PULL_SET_KEY = "ai:model:pull:tasks"
+REDIS_PULL_MODEL_PREFIX = "ai:model:lock:"
+REDIS_CONCURRENCY_KEY = "ai:model:active_pulls_count"
+REDIS_LOCK_EXPIRATION_SECONDS = 1800  # 30 minutes auto-expire
+
+# Local tracking for async streaming tasks and shutdown signaling
 _pull_lock = asyncio.Lock()
 _active_pull_tasks: Dict[str, Dict[str, Any]] = {}  # task_id -> task_data
-_active_pull_by_model: Dict[str, str] = {}  # model_name -> task_id
-MAX_CONCURRENT_PULLS = 1
+_active_pull_by_model: Dict[str, str] = {}          # model_name -> task_id
+_running_async_tasks: Dict[str, asyncio.Task] = {}  # task_id -> asyncio.Task
+_is_shutting_down = False
+
+
+async def _save_task_state_durable(task_data: Dict[str, Any]) -> None:
+    """Persists model pull task state in both Redis and memory store."""
+    task_id = task_data["task_id"]
+    payload = pyjson.dumps(task_data)
+    try:
+        r = get_redis_client()
+        await r.set(f"{REDIS_PULL_PREFIX}{task_id}", payload, ex=86400)  # 24h retention
+        await r.sadd(REDIS_PULL_SET_KEY, task_id)
+    except Exception as exc:
+        logger.debug("Redis unavailable for saving pull task %s: %s", task_id, exc)
+
+
+async def _get_all_durable_tasks() -> List[Dict[str, Any]]:
+    """Retrieves all tracked pull tasks from Redis or memory."""
+    tasks: Dict[str, Dict[str, Any]] = {}
+    try:
+        r = get_redis_client()
+        task_ids = await r.smembers(REDIS_PULL_SET_KEY)
+        for tid in task_ids:
+            raw = await r.get(f"{REDIS_PULL_PREFIX}{tid}")
+            if raw:
+                try:
+                    data = pyjson.loads(raw)
+                    tasks[data["task_id"]] = data
+                except Exception:
+                    continue
+    except Exception as exc:
+        logger.debug("Redis unavailable for retrieving pull tasks: %s", exc)
+
+    # Merge with process-local tasks
+    async with _pull_lock:
+        for tid, tdata in _active_pull_tasks.items():
+            tasks[tid] = tdata
+
+    # Sort by started_at descending
+    sorted_tasks = sorted(
+        tasks.values(),
+        key=lambda x: x.get("started_at", ""),
+        reverse=True,
+    )
+    return sorted_tasks
+
+
+async def reconcile_interrupted_pull_tasks() -> None:
+    """
+    Called on FastAPI startup to reconcile any unfinished tasks from a previous
+    crash or server restart. Incomplete tasks are cleanly transitioned to 'failed'
+    with recovery details, preventing lost tasks from being left hanging in 'downloading'
+    or ever being reported as completed.
+    """
+    logger.info("Reconciling interrupted Ollama model pull tasks...")
+    try:
+        r = get_redis_client()
+        task_ids = await r.smembers(REDIS_PULL_SET_KEY)
+        for tid in task_ids:
+            raw = await r.get(f"{REDIS_PULL_PREFIX}{tid}")
+            if not raw:
+                continue
+            try:
+                task = pyjson.loads(raw)
+            except Exception:
+                continue
+
+            if task.get("status") in ("queued", "downloading", "verifying", "cancelling"):
+                model_name = task.get("model_name", "unknown")
+                logger.warning(
+                    "Reconciling interrupted model pull task %s for model %s: marking failed.",
+                    tid,
+                    model_name,
+                )
+                task["status"] = "failed"
+                task["error"] = "Task interrupted by system restart or process termination before completion."
+                task["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                await r.set(f"{REDIS_PULL_PREFIX}{tid}", pyjson.dumps(task), ex=86400)
+                await r.delete(f"{REDIS_PULL_MODEL_PREFIX}{model_name}")
+
+        # Also reset concurrency counter key if necessary
+        active_locks = 0
+        for tid in task_ids:
+            raw = await r.get(f"{REDIS_PULL_PREFIX}{tid}")
+            if raw:
+                try:
+                    t = pyjson.loads(raw)
+                    if t.get("status") in ("queued", "downloading", "verifying"):
+                        active_locks += 1
+                except Exception:
+                    pass
+        await r.set(REDIS_CONCURRENCY_KEY, active_locks)
+    except Exception as exc:
+        logger.debug("Redis reconcile skipped: %s", exc)
+
+
+async def shutdown_active_pull_tasks() -> None:
+    """
+    Graceful shutdown handler called during lifespan exit:
+    - Sets shutdown flag to reject any new operations.
+    - Cancels actively running streaming async tasks.
+    - Updates durable state so tasks are never left in an inconsistent running state.
+    """
+    global _is_shutting_down
+    _is_shutting_down = True
+
+    async with _pull_lock:
+        running_ids = list(_running_async_tasks.keys())
+
+    for tid in running_ids:
+        async with _pull_lock:
+            task = _active_pull_tasks.get(tid)
+            if task and task.get("status") in ("queued", "downloading", "verifying", "cancelling"):
+                task["status"] = "cancelled"
+                task["current_step"] = "Cancelled due to server shutdown"
+                task["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                await _save_task_state_durable(task)
+
+            async_t = _running_async_tasks.get(tid)
+            if async_t and not async_t.done():
+                async_t.cancel()
+
+        # Release Redis model lock on shutdown
+        if task:
+            try:
+                r = get_redis_client()
+                await r.delete(f"{REDIS_PULL_MODEL_PREFIX}{task.get('model_name')}")
+            except Exception:
+                pass
 
 async def _probe_ollama(timeout_seconds: float = 5.0) -> OllamaHealthResponse:
     """
@@ -701,16 +845,78 @@ async def list_model_catalog(
 async def _execute_model_pull_task(task_id: str, model_name: str):
     """
     Background worker task that streams download progress directly from Ollama /api/pull.
-    Updates in-memory progress structure safely.
+    Updates in-memory progress structure and Redis distributed state safely.
+    Releases distributed locks upon completion, failure, cancellation, or error.
     """
     base_url = settings.OLLAMA_BASE_URL.rstrip("/")
     timeout_seconds = 1800.0  # 30 minutes for large model download
+    r = None
+    try:
+        r = get_redis_client()
+    except Exception:
+        pass
 
     async with _pull_lock:
         if task_id not in _active_pull_tasks:
             return
         _active_pull_tasks[task_id]["status"] = "downloading"
         _active_pull_tasks[task_id]["current_step"] = "Connecting to Ollama library registry"
+        task_snapshot = dict(_active_pull_tasks[task_id])
+
+    await _save_task_state_durable(task_snapshot)
+
+    async def _cleanup_locks_and_counters(terminal_status: str, error_msg: Optional[str] = None):
+        nonlocal r
+        completed_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        actor_email = "system@scorva.local"
+        async with _pull_lock:
+            if task_id in _active_pull_tasks:
+                _active_pull_tasks[task_id]["status"] = terminal_status
+                _active_pull_tasks[task_id]["completed_at"] = completed_ts
+                actor_email = _active_pull_tasks[task_id].get("initiated_by_email", actor_email)
+                if error_msg:
+                    _active_pull_tasks[task_id]["error"] = error_msg
+                if terminal_status == "completed":
+                    _active_pull_tasks[task_id]["progress_percentage"] = 100.0
+                task_done = dict(_active_pull_tasks[task_id])
+            else:
+                task_done = None
+            _active_pull_by_model.pop(model_name, None)
+            _running_async_tasks.pop(task_id, None)
+
+        if task_done:
+            await _save_task_state_durable(task_done)
+
+        # Release distributed Redis lock & decrement concurrency
+        if r:
+            try:
+                await r.delete(f"{REDIS_PULL_MODEL_PREFIX}{model_name}")
+                # Atomically ensure counter does not drop below 0
+                val = await r.decr(REDIS_CONCURRENCY_KEY)
+                if val < 0:
+                    await r.set(REDIS_CONCURRENCY_KEY, 0)
+            except Exception as e:
+                logger.debug("Redis lock release exception: %s", e)
+
+        # Audit logging for terminal state
+        try:
+            async with AsyncSessionLocal() as session:
+                action_name = f"ai.model.pull_{terminal_status}"
+                outcome = AuditOutcome.SUCCESS if terminal_status == "completed" else AuditOutcome.FAILURE
+                await record_audit_event(
+                    db=session,
+                    action=action_name,
+                    resource_type="ai_model",
+                    resource_id=model_name,
+                    outcome=outcome,
+                    actor_email=actor_email,
+                    actor_role="admin",
+                    reason=f"Model pull {terminal_status} for {model_name}" + (f": {error_msg}" if error_msg else ""),
+                    diff_payload={"task_id": task_id, "terminal_status": terminal_status},
+                )
+                await session.commit()
+        except Exception as audit_exc:
+            logger.warning("Audit logging failed for pull %s: %s", terminal_status, audit_exc)
 
     try:
         client = create_profile_b_client(
@@ -724,23 +930,22 @@ async def _execute_model_pull_task(task_id: str, model_name: str):
 
             if response.status_code != 200:
                 body = await response.aread()
-                async with _pull_lock:
-                    _active_pull_tasks[task_id]["status"] = "failed"
-                    _active_pull_tasks[task_id]["error"] = f"Ollama returned HTTP {response.status_code}: {body.decode('utf-8', 'ignore')[:150]}"
-                    _active_pull_tasks[task_id]["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                    _active_pull_by_model.pop(model_name, None)
+                err_text = f"Ollama returned HTTP {response.status_code}: {body.decode('utf-8', 'ignore')[:150]}"
+                await _cleanup_locks_and_counters("failed", err_text)
                 return
 
-            import json as pyjson
+            last_save_time = time.time()
             async for line in response.aiter_lines():
                 # Check for cancellation requested
+                is_cancelled = False
                 async with _pull_lock:
-                    if _active_pull_tasks[task_id].get("cancellation_requested", False):
-                        _active_pull_tasks[task_id]["status"] = "cancelled"
-                        _active_pull_tasks[task_id]["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                        _active_pull_by_model.pop(model_name, None)
-                        await response.aclose()
-                        return
+                    if _active_pull_tasks.get(task_id, {}).get("cancellation_requested", False) or _is_shutting_down:
+                        is_cancelled = True
+
+                if is_cancelled:
+                    await response.aclose()
+                    await _cleanup_locks_and_counters("cancelled", "Pull cancelled by administrator or server shutdown")
+                    return
 
                 if not line.strip():
                     continue
@@ -768,26 +973,21 @@ async def _execute_model_pull_task(task_id: str, model_name: str):
                         task["status"] = "completed"
                         task["progress_percentage"] = 100.0
 
-            async with _pull_lock:
-                _active_pull_tasks[task_id]["status"] = "completed"
-                _active_pull_tasks[task_id]["progress_percentage"] = 100.0
-                _active_pull_tasks[task_id]["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                _active_pull_by_model.pop(model_name, None)
+                    current_snapshot = dict(task)
+
+                # Periodically sync progress to Redis (throttle to once per second)
+                now = time.time()
+                if now - last_save_time >= 1.0 or current_snapshot["status"] in ("verifying", "completed"):
+                    last_save_time = now
+                    await _save_task_state_durable(current_snapshot)
+
+            await _cleanup_locks_and_counters("completed")
 
     except asyncio.CancelledError:
-        async with _pull_lock:
-            if task_id in _active_pull_tasks:
-                _active_pull_tasks[task_id]["status"] = "cancelled"
-                _active_pull_tasks[task_id]["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                _active_pull_by_model.pop(model_name, None)
+        await _cleanup_locks_and_counters("cancelled", "Task cancelled")
     except Exception as exc:
         logger.exception("Error during model pull task: %s", exc)
-        async with _pull_lock:
-            if task_id in _active_pull_tasks:
-                _active_pull_tasks[task_id]["status"] = "failed"
-                _active_pull_tasks[task_id]["error"] = str(exc)
-                _active_pull_tasks[task_id]["completed_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                _active_pull_by_model.pop(model_name, None)
+        await _cleanup_locks_and_counters("failed", str(exc))
 
 
 @router.post(
@@ -802,37 +1002,128 @@ async def pull_ollama_model(
 ) -> ModelPullStatusResponse:
     """
     Initiates asynchronous download for an approved model.
-    Enforces concurrency limits, duplicate check, and model name sanitization.
+    Enforces concurrency limits, distributed locking across workers,
+    download size quotas, free disk reserves, and model name sanitization.
     """
+    global _is_shutting_down
+    if _is_shutting_down:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Service is currently shutting down. New downloads cannot be initiated."},
+        )
+
     model_name = req.model_name.strip()
     if not model_name:
         return JSONResponse(status_code=400, content={"detail": "model_name cannot be empty."})
 
     # Validate model name against trusted catalog OR strict alphanum format
-    is_catalog = any(m.name == model_name for m in TRUSTED_CATALOG)
-    import re
-    if not is_catalog and not re.match(r"^[a-zA-Z0-9_\-\.\:\/]+$", model_name):
+    catalog_entry = next((m for m in TRUSTED_CATALOG if m.name == model_name), None)
+    if not catalog_entry and not re.match(r"^[a-zA-Z0-9_\-\.\:\/]+$", model_name):
         return JSONResponse(
             status_code=400,
             content={"detail": "Invalid model identifier syntax. Use standard registry tags."},
         )
 
-    # Check duplicate pull and concurrency limit
+    # 1. Download Size & Disk Space Safeguards
+    approx_size = catalog_entry.approx_size_bytes if catalog_entry else 0
+    max_download_limit = getattr(settings, "AI_MODEL_MAX_DOWNLOAD_SIZE_BYTES", 50 * 1024 * 1024 * 1024)
+    min_free_reserve = getattr(settings, "AI_MODEL_MIN_DISK_FREE_BYTES", 5 * 1024 * 1024 * 1024)
+
+    if approx_size > max_download_limit:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "detail": f"Model estimated size ({approx_size / (1024**3):.1f} GB) exceeds maximum allowable download quota ({max_download_limit / (1024**3):.1f} GB)."
+            },
+        )
+
+    # Check available storage on disk
+    try:
+        disk_usage = shutil.disk_usage(".")
+        free_bytes = disk_usage.free
+        if approx_size > 0:
+            required_space = approx_size + min_free_reserve
+            if free_bytes < required_space:
+                return JSONResponse(
+                    status_code=507,
+                    content={
+                        "detail": f"Insufficient disk space. Available: {free_bytes / (1024**3):.1f} GB; Required (estimated size + {min_free_reserve / (1024**3):.1f} GB reserve): {required_space / (1024**3):.1f} GB."
+                    },
+                )
+        elif free_bytes < min_free_reserve:
+            return JSONResponse(
+                status_code=507,
+                content={
+                    "detail": f"Insufficient disk space. Available disk ({free_bytes / (1024**3):.1f} GB) is below minimum safety reserve ({min_free_reserve / (1024**3):.1f} GB)."
+                },
+            )
+    except Exception as exc:
+        logger.warning("Could not reliably verify disk storage: %s", exc)
+
+    # 2. Distributed Locking & Concurrency Check via Redis
+    r = None
+    try:
+        r = get_redis_client()
+    except Exception:
+        pass
+
+    concurrency_limit = getattr(settings, "AI_MODEL_MAX_CONCURRENT_PULLS", 1)
+
+    if r:
+        try:
+            # Atomic check for duplicate model download across all workers
+            model_lock_key = f"{REDIS_PULL_MODEL_PREFIX}{model_name}"
+            # Try to acquire lock with atomic SET NX EX
+            acquired = await r.set(model_lock_key, "locked", nx=True, ex=REDIS_LOCK_EXPIRATION_SECONDS)
+            if not acquired:
+                return JSONResponse(
+                    status_code=409,
+                    content={"detail": f"Model '{model_name}' is already being downloaded by an active worker."},
+                )
+
+            # Atomic concurrency limit check
+            current_active = await r.incr(REDIS_CONCURRENCY_KEY)
+            if current_active > concurrency_limit:
+                # Release lock and revert counter
+                await r.decr(REDIS_CONCURRENCY_KEY)
+                await r.delete(model_lock_key)
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "detail": f"Concurrency limit reached ({concurrency_limit} active download). Please wait for ongoing downloads to complete."
+                    },
+                )
+        except Exception as exc:
+            logger.warning("Redis distributed locking failed, falling back to process lock: %s", exc)
+
+    # 3. Process-Local Lock Check
     async with _pull_lock:
         if model_name in _active_pull_by_model:
             existing_task_id = _active_pull_by_model[model_name]
             existing = _active_pull_tasks.get(existing_task_id)
             if existing and existing["status"] in ("queued", "downloading", "verifying"):
+                if r:
+                    try:
+                        await r.delete(f"{REDIS_PULL_MODEL_PREFIX}{model_name}")
+                        await r.decr(REDIS_CONCURRENCY_KEY)
+                    except Exception:
+                        pass
                 return JSONResponse(
                     status_code=409,
                     content={"detail": f"Model '{model_name}' is already being downloaded (task {existing_task_id})."},
                 )
 
         active_count = sum(1 for t in _active_pull_tasks.values() if t["status"] in ("queued", "downloading", "verifying"))
-        if active_count >= MAX_CONCURRENT_PULLS:
+        if active_count >= concurrency_limit:
+            if r:
+                try:
+                    await r.delete(f"{REDIS_PULL_MODEL_PREFIX}{model_name}")
+                    await r.decr(REDIS_CONCURRENCY_KEY)
+                except Exception:
+                    pass
             return JSONResponse(
                 status_code=429,
-                content={"detail": f"Concurrency limit reached ({MAX_CONCURRENT_PULLS} active download). Please wait for ongoing downloads to complete."},
+                content={"detail": f"Concurrency limit reached ({concurrency_limit} active download). Please wait for ongoing downloads to complete."},
             )
 
         task_id = str(uuid.uuid4())
@@ -854,13 +1145,16 @@ async def pull_ollama_model(
         _active_pull_tasks[task_id] = task_data
         _active_pull_by_model[model_name] = task_id
 
-    # Spawn background task
-    asyncio.create_task(_execute_model_pull_task(task_id, model_name))
+    # Persist durable state
+    await _save_task_state_durable(task_data)
 
-    # Audit logging
+    # Spawn background task and track handle
+    bg_task = asyncio.create_task(_execute_model_pull_task(task_id, model_name))
+    async with _pull_lock:
+        _running_async_tasks[task_id] = bg_task
+
+    # Audit logging for initiation
     try:
-        from apps.api.modules.audit.models import AuditOutcome
-        from apps.api.modules.audit.service import record_audit_event
         await record_audit_event(
             db=db,
             action="ai.model.pull_initiated",
@@ -871,6 +1165,7 @@ async def pull_ollama_model(
             actor_email=current_user.email,
             actor_role=current_user.platform_role.value if current_user.platform_role else "admin",
             reason=f"Initiated pull for model {model_name}",
+            diff_payload={"task_id": task_id, "approx_size_bytes": approx_size},
         )
     except Exception as exc:
         logger.warning("Audit logging failed for model pull: %s", exc)
@@ -886,24 +1181,24 @@ async def pull_ollama_model(
 async def get_pull_status(
     current_user: User = Depends(require_super_admin),
 ) -> List[ModelPullStatusResponse]:
-    """Returns status and progress of all active or recent model pull jobs."""
-    async with _pull_lock:
-        return [
-            ModelPullStatusResponse(
-                task_id=t["task_id"],
-                model_name=t["model_name"],
-                status=t["status"],
-                total_bytes=t.get("total_bytes", 0),
-                completed_bytes=t.get("completed_bytes", 0),
-                progress_percentage=t.get("progress_percentage", 0.0),
-                current_step=t.get("current_step"),
-                started_at=t["started_at"],
-                completed_at=t.get("completed_at"),
-                initiated_by_email=t["initiated_by_email"],
-                error=t.get("error"),
-            )
-            for t in list(_active_pull_tasks.values())[-10:]
-        ]
+    """Returns status and progress of all active or recent model pull jobs across workers."""
+    tasks = await _get_all_durable_tasks()
+    return [
+        ModelPullStatusResponse(
+            task_id=t["task_id"],
+            model_name=t["model_name"],
+            status=t["status"],
+            total_bytes=t.get("total_bytes", 0),
+            completed_bytes=t.get("completed_bytes", 0),
+            progress_percentage=t.get("progress_percentage", 0.0),
+            current_step=t.get("current_step"),
+            started_at=t["started_at"],
+            completed_at=t.get("completed_at"),
+            initiated_by_email=t["initiated_by_email"],
+            error=t.get("error"),
+        )
+        for t in tasks[:15]
+    ]
 
 
 @router.post(
@@ -914,33 +1209,77 @@ async def get_pull_status(
 async def cancel_model_pull(
     task_id: str,
     current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db_session),
 ) -> ModelPullStatusResponse:
     """Cancels an in-progress download if actively running."""
     async with _pull_lock:
         task = _active_pull_tasks.get(task_id)
-        if not task:
-            return JSONResponse(status_code=404, content={"detail": f"Pull task {task_id} not found."})
 
-        if task["status"] in ("completed", "failed", "cancelled"):
-            return JSONResponse(status_code=400, content={"detail": f"Task is already {task['status']}."})
+    if not task:
+        # Check Redis durable store
+        try:
+            r = get_redis_client()
+            raw = await r.get(f"{REDIS_PULL_PREFIX}{task_id}")
+            if raw:
+                task = pyjson.loads(raw)
+        except Exception:
+            pass
 
-        task["cancellation_requested"] = True
-        task["status"] = "cancelling"
-        task["current_step"] = "Cancellation requested"
+    if not task:
+        return JSONResponse(status_code=404, content={"detail": f"Pull task {task_id} not found."})
 
-        return ModelPullStatusResponse(
-            task_id=task["task_id"],
-            model_name=task["model_name"],
-            status=task["status"],
-            total_bytes=task.get("total_bytes", 0),
-            completed_bytes=task.get("completed_bytes", 0),
-            progress_percentage=task.get("progress_percentage", 0.0),
-            current_step=task.get("current_step"),
-            started_at=task["started_at"],
-            completed_at=task.get("completed_at"),
-            initiated_by_email=task["initiated_by_email"],
-            error=task.get("error"),
+    if task["status"] in ("completed", "failed", "cancelled"):
+        return JSONResponse(status_code=400, content={"detail": f"Task is already {task['status']}."})
+
+    async with _pull_lock:
+        if task_id in _active_pull_tasks:
+            _active_pull_tasks[task_id]["cancellation_requested"] = True
+            _active_pull_tasks[task_id]["status"] = "cancelling"
+            _active_pull_tasks[task_id]["current_step"] = "Cancellation requested"
+            task = _active_pull_tasks[task_id]
+        else:
+            task["cancellation_requested"] = True
+            task["status"] = "cancelling"
+            task["current_step"] = "Cancellation requested"
+
+    await _save_task_state_durable(task)
+
+    # Cancel the running asyncio streaming task if locally resident
+    async with _pull_lock:
+        async_t = _running_async_tasks.get(task_id)
+        if async_t and not async_t.done():
+            async_t.cancel()
+
+    # Audit cancellation request
+    try:
+        await record_audit_event(
+            db=db,
+            action="ai.model.pull_cancelled",
+            resource_type="ai_model",
+            resource_id=task["model_name"],
+            outcome=AuditOutcome.SUCCESS,
+            actor_user_id=current_user.id,
+            actor_email=current_user.email,
+            actor_role=current_user.platform_role.value if current_user.platform_role else "admin",
+            reason=f"Administrator requested cancellation of pull task {task_id}",
+            diff_payload={"task_id": task_id},
         )
+    except Exception as exc:
+        logger.warning("Audit logging failed for model pull cancel: %s", exc)
+
+    return ModelPullStatusResponse(
+        task_id=task["task_id"],
+        model_name=task["model_name"],
+        status=task["status"],
+        total_bytes=task.get("total_bytes", 0),
+        completed_bytes=task.get("completed_bytes", 0),
+        progress_percentage=task.get("progress_percentage", 0.0),
+        current_step=task.get("current_step"),
+        started_at=task["started_at"],
+        completed_at=task.get("completed_at"),
+        initiated_by_email=task["initiated_by_email"],
+        error=task.get("error"),
+    )
 
 
 @router.delete(

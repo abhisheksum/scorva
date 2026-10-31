@@ -176,6 +176,35 @@ export default function AiOperationsPage() {
     }
   }, [models, playgroundModel]);
 
+  // ── Data Loaders ──
+
+  const loadHealthAndModels = useCallback(async () => {
+    setHealthLoading(true);
+    setHealthError(null);
+    setModelsLoading(true);
+    setModelsError(null);
+
+    try {
+      const data = await api.getOllamaHealth();
+      setHealth(data);
+      if (data.reachable) {
+        setLastSuccessfulHealthCheck(new Date());
+        // Use installed_models from health response or fetch separately if needed
+        const modelList = data.installed_models ?? data.models ?? [];
+        setModels(modelList);
+      } else {
+        setModels([]);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to probe Ollama service';
+      setHealthError(msg);
+      setModelsError(msg);
+    } finally {
+      setHealthLoading(false);
+      setModelsLoading(false);
+    }
+  }, []);
+
   // Load catalog
   const loadCatalog = useCallback(async () => {
     setCatalogLoading(true);
@@ -210,35 +239,6 @@ export default function AiOperationsPage() {
     const interval = setInterval(loadPullStatus, 3000);
     return () => clearInterval(interval);
   }, [loadPullStatus]);
-
-  // ── Data Loaders ──
-
-  const loadHealthAndModels = useCallback(async () => {
-    setHealthLoading(true);
-    setHealthError(null);
-    setModelsLoading(true);
-    setModelsError(null);
-
-    try {
-      const data = await api.getOllamaHealth();
-      setHealth(data);
-      if (data.reachable) {
-        setLastSuccessfulHealthCheck(new Date());
-        // Use installed_models from health response or fetch separately if needed
-        const modelList = data.installed_models ?? data.models ?? [];
-        setModels(modelList);
-      } else {
-        setModels([]);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to probe Ollama service';
-      setHealthError(msg);
-      setModelsError(msg);
-    } finally {
-      setHealthLoading(false);
-      setModelsLoading(false);
-    }
-  }, []);
 
   const loadMetrics = useCallback(async () => {
     setMetricsLoading(true);
@@ -396,7 +396,7 @@ export default function AiOperationsPage() {
     setPullingModelName(modelName);
     setLifecycleMessage(null);
     try {
-      const res = await api.pullModel({ model_name: modelName });
+      const res = await api.pullModel(modelName);
       setLifecycleMessage({
         type: 'success',
         text: `Model pull initiated: ${res.model_name}. Download running in background.`,
@@ -435,7 +435,7 @@ export default function AiOperationsPage() {
       const res = await api.deleteModel(modelToDelete);
       setLifecycleMessage({
         type: 'success',
-        text: `Model "${res.model_name}" deleted successfully from Ollama storage.`,
+        text: res.message || `Model "${modelToDelete}" deleted successfully from Ollama storage.`,
       });
       setModelToDelete(null);
       await loadHealthAndModels();
@@ -911,12 +911,12 @@ Suggest concrete remediation steps.`,
                         <span>
                           Current step:{' '}
                           <span className="text-text-secondary font-medium">
-                            {task.current_operation || 'Waiting for Ollama stream...'}
+                            {task.current_step || 'Waiting for Ollama stream...'}
                           </span>
                         </span>
-                        {task.error_details && (
+                        {task.error && (
                           <span className="text-status-danger font-medium">
-                            Error: {task.error_details}
+                            Error: {task.error}
                           </span>
                         )}
                       </div>
@@ -1017,7 +1017,7 @@ Suggest concrete remediation steps.`,
 
                       <div className="pt-2 border-t border-surface-border flex items-center justify-between">
                         <span className="text-[10px] text-text-muted">
-                          Download: <span className="font-semibold text-text-primary">{item.download_size}</span>
+                          Download: <span className="font-semibold text-text-primary">{fmtBytes(item.approx_size_bytes)}</span>
                         </span>
 
                         <button
@@ -1066,7 +1066,7 @@ Suggest concrete remediation steps.`,
                     <tr>
                       <th className="px-4 py-2.5">Model Name</th>
                       <th className="px-4 py-2.5">Disk Size</th>
-                      <th className="px-4 py-2.5">Format / Family</th>
+                      <th className="px-4 py-2.5">Parameters / Quant</th>
                       <th className="px-4 py-2.5">Modified</th>
                       <th className="px-4 py-2.5 text-right">Actions</th>
                     </tr>
@@ -1077,7 +1077,9 @@ Suggest concrete remediation steps.`,
                         <td className="px-4 py-3 font-bold text-text-primary">{m.name}</td>
                         <td className="px-4 py-3 text-text-secondary">{fmtBytes(m.size || 0)}</td>
                         <td className="px-4 py-3 text-text-muted font-sans">
-                          {m.details?.format ? `${m.details.format} (${m.details.family || '—'})` : '—'}
+                          {m.parameter_size || m.quantization_level
+                            ? `${m.parameter_size || '—'} (${m.quantization_level || '—'})`
+                            : '—'}
                         </td>
                         <td className="px-4 py-3 text-text-muted font-sans">{fmtDate(m.modified_at)}</td>
                         <td className="px-4 py-3 text-right">

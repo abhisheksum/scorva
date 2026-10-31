@@ -32,6 +32,7 @@ ALLOWED_INTERNAL_AI_HOSTS: Set[str] = {
     "ollama",
     "localhost",
     "127.0.0.1",
+    "host.docker.internal",
 }
 
 # Strict Profile B Permitted Internal Ports (Ollama default 11434, plus 443 for internal TLS)
@@ -80,7 +81,7 @@ def is_valid_internal_ai_ip(
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
         return is_valid_internal_ai_ip(ip.ipv4_mapped, hostname)
 
-    # Loopback is permitted for localhost, 127.0.0.1, or ollama
+    # Loopback is permitted for localhost, 127.0.0.1, ollama, or host.docker.internal
     if ip.is_loopback:
         return True
 
@@ -96,9 +97,9 @@ def is_valid_internal_ai_ip(
     if ip.is_global:
         return False
 
-    # Private network addresses are permitted ONLY for docker hostname 'ollama'
+    # Private network addresses are permitted ONLY for internal docker hostnames ('ollama', 'host.docker.internal')
     if ip.is_private:
-        return hostname == "ollama"
+        return hostname in ("ollama", "host.docker.internal")
 
     return False
 
@@ -306,7 +307,27 @@ def validate_profile_b_url(
 
         if not resolved_ips:
             raise SSRFViolationError(f"No IP addresses resolved for internal AI host '{hostname}'.")
+
+        # When multiple IP addresses resolve (e.g., dual-stack IPv6 ::1 and IPv4 127.0.0.1 for localhost),
+        # prioritize an address that actively accepts connections or IPv4 loopback to avoid connecting
+        # to an inactive IPv6 interface when the daemon listens only on IPv4.
         pinned_ip = resolved_ips[0]
+        if len(resolved_ips) > 1 and not dns_resolver:
+            for candidate in resolved_ips:
+                try:
+                    s_family = socket.AF_INET6 if ":" in candidate else socket.AF_INET
+                    with socket.socket(s_family, socket.SOCK_STREAM) as test_sock:
+                        test_sock.settimeout(0.1)
+                        if test_sock.connect_ex((candidate, port)) == 0:
+                            pinned_ip = candidate
+                            break
+                except Exception:
+                    continue
+        elif len(resolved_ips) > 1 and dns_resolver:
+            # If using custom dns_resolver in tests/mocks, prefer IPv4 if available
+            ipv4_candidates = [ip for ip in resolved_ips if ":" not in ip]
+            if ipv4_candidates:
+                pinned_ip = ipv4_candidates[0]
 
     return hostname, pinned_ip, port
 
