@@ -31,6 +31,7 @@ from apps.api.modules.organizations.schemas import (
     OrganizationSummaryResponse,
     OwnerSummary,
     TenantUpdateOrganizationRequest,
+    TransferOwnershipRequest,
     UpdateMemberRoleRequest,
     UpdateOrganizationStatusRequest,
     UserSummary,

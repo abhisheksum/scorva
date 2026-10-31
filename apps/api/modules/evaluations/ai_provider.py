@@ -11,7 +11,7 @@ Implements a vendor-decoupled AI evaluation client supporting:
 
 import json
 import logging
-from typing import Any, Callable, Dict, List, Optional, Protocol, runtime_checkable
+from typing import Any, Callable, Dict, List, Optional, Protocol, Set, runtime_checkable
 
 import httpx
 
