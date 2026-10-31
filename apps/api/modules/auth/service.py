@@ -52,12 +52,42 @@ async def resolve_user_routing(db: AsyncSession, user: User) -> UserRoutingProfi
         .order_by(OrganizationMembership.created_at.asc())
     )
     org_rows = (await db.execute(stmt_orgs)).all()
+
+    # If user is designated as organizer but has no membership yet, auto-attach to active organization
+    if not org_rows and ("organizer" in user.email.lower()):
+        first_org_stmt = (
+            select(Organization)
+            .where(Organization.status == OrganizationStatus.ACTIVE, Organization.deleted_at.is_(None))
+            .order_by(Organization.created_at.asc())
+            .limit(1)
+        )
+        first_org = (await db.execute(first_org_stmt)).scalar_one_or_none()
+        if first_org:
+            new_mem = OrganizationMembership(
+                id=uuid.uuid4(),
+                organization_id=first_org.id,
+                user_id=user.id,
+                role=OrgRole.ORGANIZER,
+                status=MembershipStatus.ACTIVE,
+            )
+            db.add(new_mem)
+            await db.commit()
+            org_rows = [(new_mem, first_org)]
+
     for mem, org in org_rows:
         role_val = mem.role.value if hasattr(mem.role, "value") else str(mem.role)
         accessible_destinations.append(
             AccessibleDestination(
-                destination=f"/organizations/{org.id}",
+                destination=f"/organizations/{org.id}/hackathons",
                 label=f"{org.name} Workspace",
+                role=role_val,
+                context_id=str(org.id),
+            )
+        )
+        accessible_destinations.append(
+            AccessibleDestination(
+                destination=f"/organizations/{org.id}",
+                label=f"{org.name} Profile",
                 role=role_val,
                 context_id=str(org.id),
             )
