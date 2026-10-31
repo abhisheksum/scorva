@@ -25,7 +25,9 @@ from apps.api.modules.hackathons.service import (
     get_hackathon_detail,
     list_tenant_hackathons,
     publish_hackathon,
+    publish_hackathon_results,
     tenant_update_hackathon_status,
+    unpublish_hackathon_results,
     update_hackathon,
 )
 
@@ -207,6 +209,48 @@ async def post_tenant_update_hackathon_status(
         org_id=tenant.organization.id,
         hackathon_id=hackathon_id,
         data=data,
+        actor=tenant.user,
+        actor_role=tenant.role,
+        ip_address=ip,
+        user_agent=ua,
+        correlation_id=corr_id,
+    )
+
+
+@router.post("/{hackathon_id}/publish-results", response_model=HackathonDetailResponse)
+async def post_publish_results(
+    hackathon_id: uuid.UUID,
+    request: Request,
+    tenant: TenantContext = Depends(require_org_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Publishes evaluation results and releases official leaderboard for participants (§6.5)."""
+    ip, ua, corr_id = _extract_telemetry(request)
+    return await publish_hackathon_results(
+        db=db,
+        org_id=tenant.organization.id,
+        hackathon_id=hackathon_id,
+        actor=tenant.user,
+        actor_role=tenant.role,
+        ip_address=ip,
+        user_agent=ua,
+        correlation_id=corr_id,
+    )
+
+
+@router.post("/{hackathon_id}/unpublish-results", response_model=HackathonDetailResponse)
+async def post_unpublish_results(
+    hackathon_id: uuid.UUID,
+    request: Request,
+    tenant: TenantContext = Depends(require_org_admin),
+    db: AsyncSession = Depends(get_db_session),
+):
+    """Unpublishes evaluation results and conceals leaderboard from participants."""
+    ip, ua, corr_id = _extract_telemetry(request)
+    return await unpublish_hackathon_results(
+        db=db,
+        org_id=tenant.organization.id,
+        hackathon_id=hackathon_id,
         actor=tenant.user,
         actor_role=tenant.role,
         ip_address=ip,

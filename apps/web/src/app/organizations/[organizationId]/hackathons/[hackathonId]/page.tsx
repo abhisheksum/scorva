@@ -84,6 +84,7 @@ export default function TenantHackathonDetailPage({
 
   // Lifecycle Action In Progress
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
+  const [isPublishingResults, setIsPublishingResults] = useState<boolean>(false);
 
   // Edit Modal State
   const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
@@ -761,6 +762,40 @@ export default function TenantHackathonDetailPage({
       else setReviewError('Failed to submit final review.');
     } finally {
       setIsSubmittingReview(false);
+    }
+  };
+
+  const handlePublishResults = async () => {
+    if (!confirm('Publish official evaluation results and release the leaderboard to all participants?')) return;
+    setIsPublishingResults(true);
+    setError(null);
+    try {
+      await api.publishHackathonResults(orgId, hackathonId);
+      setSuccessMessage('Official evaluation results and leaderboard released to participants!');
+      setTimeout(() => setSuccessMessage(null), 4000);
+      loadData(true);
+    } catch (err: unknown) {
+      if (err instanceof ApiClientError) setError(err.message);
+      else setError('Failed to publish results.');
+    } finally {
+      setIsPublishingResults(false);
+    }
+  };
+
+  const handleUnpublishResults = async () => {
+    if (!confirm('Conceal results from participants? The leaderboard will return to pending publication.')) return;
+    setIsPublishingResults(true);
+    setError(null);
+    try {
+      await api.unpublishHackathonResults(orgId, hackathonId);
+      setSuccessMessage('Official results unpublished. Leaderboard is now concealed from participants.');
+      setTimeout(() => setSuccessMessage(null), 4000);
+      loadData(true);
+    } catch (err: unknown) {
+      if (err instanceof ApiClientError) setError(err.message);
+      else setError('Failed to unpublish results.');
+    } finally {
+      setIsPublishingResults(false);
     }
   };
 
@@ -1793,15 +1828,40 @@ export default function TenantHackathonDetailPage({
                 AI evaluates the evidence. Judges make the decisions. Track independent human review coverage.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => loadTabData('reviews')}
-              disabled={isTabLoading}
-              className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-hover border border-surface-border rounded-lg inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isTabLoading ? 'animate-spin' : ''}`} />
-              <span>Refresh Progress</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {hackathon?.settings?.results_published ? (
+                <button
+                  type="button"
+                  onClick={handleUnpublishResults}
+                  disabled={isPublishingResults}
+                  className="px-3 py-1.5 text-xs font-semibold text-status-success bg-status-success/10 hover:bg-status-success/20 border border-status-success/30 rounded-lg inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                  title="Results are live. Click to conceal from participants."
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{isPublishingResults ? 'Updating...' : 'Results Published (Live)'}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handlePublishResults}
+                  disabled={isPublishingResults}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-hover rounded-lg inline-flex items-center gap-1.5 shadow-xs transition-colors disabled:opacity-50"
+                  title="Release official results and leaderboard to participants"
+                >
+                  <Award className="w-3.5 h-3.5" />
+                  <span>{isPublishingResults ? 'Publishing...' : 'Publish Official Results'}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => loadTabData('reviews')}
+                disabled={isTabLoading}
+                className="px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary bg-surface-elevated hover:bg-surface-hover border border-surface-border rounded-lg inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isTabLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh Progress</span>
+              </button>
+            </div>
           </div>
 
           {/* Metric Cards */}

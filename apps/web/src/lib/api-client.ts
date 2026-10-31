@@ -81,6 +81,14 @@ import {
   SupportTicketDetailResponse,
   CreateSupportTicketRequest,
   CreateSupportReplyRequest,
+  RegistrationStatusResponse,
+  ParticipantProjectRegistrationRequest,
+  ProjectRegistrationSuccessResponse,
+  ParticipantPatTokenStatus,
+  SaveParticipantPatRequest,
+  SaveParticipantPatResponse,
+  ParticipantGitHubSettingsResponse,
+  VerifyParticipantGitHubResponse,
 } from '@/types/api';
 
 const API_BASE_URL =
@@ -602,6 +610,24 @@ export const api = {
     return fetchApi<HackathonDetailResponse>(`/api/v1/organizations/${orgId}/hackathons/${hackathonId}/status`, {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  },
+
+  publishHackathonResults: async (
+    orgId: string,
+    hackathonId: string
+  ): Promise<HackathonDetailResponse> => {
+    return fetchApi<HackathonDetailResponse>(`/api/v1/organizations/${orgId}/hackathons/${hackathonId}/publish-results`, {
+      method: 'POST',
+    });
+  },
+
+  unpublishHackathonResults: async (
+    orgId: string,
+    hackathonId: string
+  ): Promise<HackathonDetailResponse> => {
+    return fetchApi<HackathonDetailResponse>(`/api/v1/organizations/${orgId}/hackathons/${hackathonId}/unpublish-results`, {
+      method: 'POST',
     });
   },
 
@@ -1307,6 +1333,75 @@ export const api = {
       {
         method: 'POST',
         body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getParticipantRegistrationStatus: async (
+    options?: RequestInit
+  ): Promise<RegistrationStatusResponse> => {
+    return fetchApi<RegistrationStatusResponse>(
+      '/api/v1/participant/registration-status',
+      options
+    );
+  },
+
+  registerParticipantProject: async (
+    data: ParticipantProjectRegistrationRequest
+  ): Promise<ProjectRegistrationSuccessResponse> => {
+    return fetchApi<ProjectRegistrationSuccessResponse>(
+      '/api/v1/participant/register-project',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  getParticipantPatStatus: async (
+    options?: RequestInit
+  ): Promise<ParticipantPatTokenStatus> => {
+    return fetchApi<ParticipantPatTokenStatus>(
+      '/api/v1/participant/settings/pat',
+      options
+    );
+  },
+
+  saveParticipantPat: async (
+    data: SaveParticipantPatRequest
+  ): Promise<SaveParticipantPatResponse> => {
+    return fetchApi<SaveParticipantPatResponse>(
+      '/api/v1/participant/settings/pat',
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  deleteParticipantPat: async (): Promise<{ status: string; message: string }> => {
+    return fetchApi<{ status: string; message: string }>(
+      '/api/v1/participant/settings/pat',
+      {
+        method: 'DELETE',
+      }
+    );
+  },
+
+  getParticipantGitHubSettings: async (
+    options?: RequestInit
+  ): Promise<ParticipantGitHubSettingsResponse> => {
+    return fetchApi<ParticipantGitHubSettingsResponse>(
+      '/api/v1/participant/settings/github',
+      options
+    );
+  },
+
+  verifyParticipantGitHubRepository: async (): Promise<VerifyParticipantGitHubResponse> => {
+    return fetchApi<VerifyParticipantGitHubResponse>(
+      '/api/v1/participant/settings/github/verify',
+      {
+        method: 'POST',
       }
     );
   },

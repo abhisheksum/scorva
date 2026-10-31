@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Bell,
   LifeBuoy,
+  Settings,
   LogOut,
   User,
   Compass,
@@ -65,6 +66,12 @@ export function ParticipantSidebar({
       name: 'Support Center',
       href: '/participant/support',
       icon: LifeBuoy,
+      exact: false,
+    },
+    {
+      name: 'Account & Settings',
+      href: '/participant/settings',
+      icon: Settings,
       exact: false,
     },
   ];

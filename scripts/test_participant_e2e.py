@@ -34,6 +34,60 @@ def run_tests():
     assert default_dest == "/participant", f"Expected default destination /participant, got {default_dest}"
 
     print("\n=======================================================")
+    print(" 1B. Unskippable Intake Form & Agreement Enforcement")
+    print("=======================================================")
+    # Check registration status
+    resp = session.get(f"{BASE_URL}/api/v1/participant/registration-status")
+    assert resp.status_code == 200, f"Failed: {resp.status_code} {resp.text}"
+    reg_status = resp.json()
+    print(f"✅ Initial Registration Status: is_registered={reg_status['is_registered']}")
+
+    # Attempt to submit without agreement checkbox
+    bad_agreement_payload = {
+        "team_name": "Team Quantum",
+        "team_number": "TQ-99",
+        "github_url": "https://github.com/scorva/quantum-agent",
+        "team_members_details": "Peter Participant, Test Administrator",
+        "project_title": "Quantum AI Distributed Engine",
+        "project_description": "A distributed system for AI code verification.",
+        "agreement_accepted": False,
+    }
+    resp = session.post(f"{BASE_URL}/api/v1/participant/register-project", json=bad_agreement_payload)
+    assert resp.status_code == 400, "Expected 400 when agreement checkbox is unchecked"
+    assert "AGREEMENT_REQUIRED" in resp.text, "Expected code AGREEMENT_REQUIRED"
+    print("✅ Verified: Unskippable form rejects submission when agreement is not checked.")
+
+    # Attempt to submit with invalid GitHub URL
+    bad_url_payload = dict(bad_agreement_payload)
+    bad_url_payload["agreement_accepted"] = True
+    bad_url_payload["github_url"] = "https://invalid-git-host.com/project"
+    resp = session.post(f"{BASE_URL}/api/v1/participant/register-project", json=bad_url_payload)
+    assert resp.status_code == 400, "Expected 400 when GitHub URL is invalid"
+    assert "INVALID_GITHUB_URL" in resp.text, "Expected code INVALID_GITHUB_URL"
+    print("✅ Verified: Unskippable form rejects non-GitHub repository URLs.")
+
+    # Submit valid complete form with 4 team members added one by one
+    valid_payload = dict(bad_agreement_payload)
+    valid_payload["agreement_accepted"] = True
+    valid_payload["github_url"] = "https://github.com/scorva/quantum-agent"
+    valid_payload["team_members_details"] = (
+        "Member 1 (Lead): Peter Participant (peter@scorva.io)\n"
+        "Member 2: Alice Vance (alice@scorva.io)\n"
+        "Member 3: Bob Smith (bob@scorva.io)\n"
+        "Member 4: Charlie Davis (charlie@scorva.io)"
+    )
+    resp = session.post(f"{BASE_URL}/api/v1/participant/register-project", json=valid_payload)
+    assert resp.status_code == 200, f"Failed to submit intake registration: {resp.status_code} {resp.text}"
+    reg_res = resp.json()
+    print(f"✅ Verified: Successfully submitted intake registration with 4 team members! (Team: {reg_res['team_name']}, No: {reg_res['team_number']})")
+
+    # Verify status is now registered
+    resp = session.get(f"{BASE_URL}/api/v1/participant/registration-status")
+    assert resp.status_code == 200
+    assert resp.json()["is_registered"] is True, "Status must now be is_registered=True"
+    print("✅ Verified: Subsequent calls report is_registered=True, unlocking dashboard access.")
+
+    print("\n=======================================================")
     print(" 2. GET /api/v1/participant/teams")
     print("=======================================================")
     resp = session.get(f"{BASE_URL}/api/v1/participant/teams")
@@ -201,7 +255,72 @@ def run_tests():
     print(f"✅ Verified ticket detail contains {len(detail_with_replies['replies'])} replies.")
 
     print("\n=======================================================")
-    print(" 🎉 ALL 14 PARTICIPANT WORKSPACE TESTS PASSED!")
+    print(" 15. PAT Token Settings: GET, POST, DELETE /api/v1/participant/settings/pat")
+    print("=======================================================")
+    # 1. Initial state
+    resp = session.get(f"{BASE_URL}/api/v1/participant/settings/pat")
+    assert resp.status_code == 200, f"Failed: {resp.status_code} {resp.text}"
+    print(f"✅ Initial PAT status retrieved: has_token={resp.json()['has_token']}")
+
+    # 2. Save PAT token
+    sample_pat = "github_pat_11ABCD_efghijklmnopqrstuvwxyz0123456789"
+    resp = session.post(f"{BASE_URL}/api/v1/participant/settings/pat", json={"pat_token": sample_pat})
+    assert resp.status_code == 200, f"Failed: {resp.status_code} {resp.text}"
+    saved_pat = resp.json()
+    print(f"✅ PAT token saved and verified: masked='{saved_pat['token_masked']}', is_verified={saved_pat['is_verified']}")
+    assert saved_pat["is_verified"] is True
+    assert "github_pat_" in saved_pat["token_masked"]
+
+    # 3. Retrieve updated status
+    resp = session.get(f"{BASE_URL}/api/v1/participant/settings/pat")
+    assert resp.status_code == 200
+    pat_info = resp.json()
+    assert pat_info["has_token"] is True
+    print(f"✅ Verified PAT token persistence in settings dashboard: {pat_info['token_masked']}")
+
+    # 4. Revoke / Delete PAT token
+    resp = session.delete(f"{BASE_URL}/api/v1/participant/settings/pat")
+    assert resp.status_code == 200
+    print("✅ PAT token revoked successfully.")
+
+    # 5. Confirm deletion
+    resp = session.get(f"{BASE_URL}/api/v1/participant/settings/pat")
+    assert resp.status_code == 200
+    assert resp.json()["has_token"] is False
+    print("✅ Verified token removal confirmed in settings.")
+
+    print("\n=======================================================")
+    print(" 16. GitHub Settings & Ownership Verification Run Button")
+    print("=======================================================")
+    # 1. Fetch GitHub settings (should show registered repo from intake form)
+    resp = session.get(f"{BASE_URL}/api/v1/participant/settings/github")
+    assert resp.status_code == 200, f"Failed: {resp.status_code} {resp.text}"
+    gh_info = resp.json()
+    print(f"✅ Registered GitHub repo retrieved: url='{gh_info['repository_url']}', team='{gh_info['team_name']}'")
+    assert gh_info["has_registration"] is True
+    assert gh_info["repository_url"] == "https://github.com/scorva/quantum-agent"
+
+    # 2. Re-configure PAT token
+    resp = session.post(f"{BASE_URL}/api/v1/participant/settings/pat", json={"pat_token": sample_pat})
+    assert resp.status_code == 200
+
+    # 3. Click "Run Verification" button -> POST /api/v1/participant/settings/github/verify
+    resp = session.post(f"{BASE_URL}/api/v1/participant/settings/github/verify")
+    assert resp.status_code == 200, f"Failed: {resp.status_code} {resp.text}"
+    verify_res = resp.json()
+    print(f"✅ Run Verification succeeded: status='{verify_res['verification_status']}'")
+    assert verify_res["verification_status"] == "verified"
+
+    # 4. Verify GitHub settings reflects verified status badge
+    resp = session.get(f"{BASE_URL}/api/v1/participant/settings/github")
+    assert resp.status_code == 200
+    updated_gh = resp.json()
+    assert updated_gh["verification_status"] == "verified"
+    assert updated_gh["verified_at"] is not None
+    print(f"✅ Verified: GitHub settings status badge is now '{updated_gh['verification_status']}' on {updated_gh['verified_at']}")
+
+    print("\n=======================================================")
+    print(" 🎉 ALL 16 PARTICIPANT WORKSPACE TESTS PASSED!")
     print("=======================================================\n")
 
 if __name__ == "__main__":

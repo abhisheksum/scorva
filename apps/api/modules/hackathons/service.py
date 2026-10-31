@@ -988,3 +988,121 @@ async def override_admin_hackathon_status(
 
     await db.commit()
     return await get_admin_hackathon_detail(db, hackathon_id)
+
+
+async def publish_hackathon_results(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    hackathon_id: uuid.UUID,
+    actor: User,
+    actor_role: OrgRole,
+    ip_address: str,
+    user_agent: str,
+    correlation_id: Optional[uuid.UUID] = None,
+) -> HackathonDetailResponse:
+    """Publishes evaluation results and releases official leaderboard for participants (§6.5)."""
+    stmt = (
+        select(Hackathon)
+        .where(
+            Hackathon.id == hackathon_id,
+            Hackathon.organization_id == org_id,
+            Hackathon.deleted_at.is_(None),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    hackathon = (await db.execute(stmt)).scalar_one_or_none()
+    if not hackathon:
+        raise AppException(
+            code="HACKATHON_NOT_FOUND",
+            message="Hackathon not found in this organization.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            title="Hackathon Not Found",
+        )
+
+    if hackathon.status not in (HackathonStatus.PUBLISHED, HackathonStatus.COMPLETED):
+        raise AppException(
+            code="INVALID_STATUS_FOR_PUBLICATION",
+            message="Results can only be published for active published or completed hackathons.",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            title="Invalid Status for Publication",
+        )
+
+    new_settings = dict(hackathon.settings or {})
+    new_settings["results_published"] = True
+    new_settings["results_published_at"] = datetime.now(timezone.utc).isoformat()
+    hackathon.settings = new_settings
+
+    await record_audit_event(
+        db=db,
+        action="hackathon_results_published",
+        resource_type="hackathon",
+        resource_id=str(hackathon_id),
+        outcome=AuditOutcome.SUCCESS,
+        actor_user_id=actor.id,
+        actor_email=actor.email,
+        actor_role=actor_role.value,
+        organization_id=org_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        correlation_id=correlation_id,
+        diff_payload={"hackathon_title": hackathon.title, "results_published": True},
+    )
+
+    await db.commit()
+    return await get_hackathon_detail(db, org_id, hackathon_id)
+
+
+async def unpublish_hackathon_results(
+    db: AsyncSession,
+    org_id: uuid.UUID,
+    hackathon_id: uuid.UUID,
+    actor: User,
+    actor_role: OrgRole,
+    ip_address: str,
+    user_agent: str,
+    correlation_id: Optional[uuid.UUID] = None,
+) -> HackathonDetailResponse:
+    """Unpublishes evaluation results and conceals leaderboard from participants."""
+    stmt = (
+        select(Hackathon)
+        .where(
+            Hackathon.id == hackathon_id,
+            Hackathon.organization_id == org_id,
+            Hackathon.deleted_at.is_(None),
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    hackathon = (await db.execute(stmt)).scalar_one_or_none()
+    if not hackathon:
+        raise AppException(
+            code="HACKATHON_NOT_FOUND",
+            message="Hackathon not found in this organization.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            title="Hackathon Not Found",
+        )
+
+    new_settings = dict(hackathon.settings or {})
+    new_settings["results_published"] = False
+    hackathon.settings = new_settings
+
+    await record_audit_event(
+        db=db,
+        action="hackathon_results_unpublished",
+        resource_type="hackathon",
+        resource_id=str(hackathon_id),
+        outcome=AuditOutcome.SUCCESS,
+        actor_user_id=actor.id,
+        actor_email=actor.email,
+        actor_role=actor_role.value,
+        organization_id=org_id,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        correlation_id=correlation_id,
+        diff_payload={"hackathon_title": hackathon.title, "results_published": False},
+    )
+
+    await db.commit()
+    return await get_hackathon_detail(db, org_id, hackathon_id)
+

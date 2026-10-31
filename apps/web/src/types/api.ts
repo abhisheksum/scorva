@@ -1214,5 +1214,96 @@ export interface CreateSupportReplyRequest {
   message: string;
 }
 
+export interface ProjectRegistrationDetail {
+  id: string;
+  team_name: string;
+  team_number: string;
+  github_url: string;
+  team_members_details: string;
+  project_title: string;
+  project_description: string;
+  agreement_accepted: boolean;
+  submitted_at: string;
+}
+
+export interface RegistrationStatusResponse {
+  is_registered: boolean;
+  registration?: ProjectRegistrationDetail | null;
+  default_team_name?: string | null;
+  default_team_id?: string | null;
+  default_hackathon_id?: string | null;
+  default_hackathon_title?: string | null;
+}
+
+export interface ParticipantProjectRegistrationRequest {
+  team_name: string;
+  team_number: string;
+  github_url: string;
+  team_members_details: string;
+  project_title: string;
+  project_description: string;
+  agreement_accepted: boolean;
+  hackathon_id?: string | null;
+  team_id?: string | null;
+}
+
+export interface ProjectRegistrationSuccessResponse {
+  status: string;
+  message: string;
+  registration_id: string;
+  team_name: string;
+  team_number: string;
+  project_title: string;
+}
+
+export interface ParticipantPatTokenStatus {
+  has_token: boolean;
+  token_prefix?: string | null;
+  token_masked?: string | null;
+  is_verified: boolean;
+  verified_username?: string | null;
+  last_verified_at?: string | null;
+}
+
+export interface SaveParticipantPatRequest {
+  pat_token: string;
+}
+
+export interface SaveParticipantPatResponse {
+  status: string;
+  message: string;
+  token_masked: string;
+  is_verified: boolean;
+  verified_username?: string | null;
+}
+
+export interface ParticipantGitHubSettingsResponse {
+  has_registration: boolean;
+  team_name?: string | null;
+  team_number?: string | null;
+  project_title?: string | null;
+  repository_url?: string | null;
+  repository_owner?: string | null;
+  repository_name?: string | null;
+  verification_status: 'unverified' | 'verified' | 'failed' | string;
+  verified_at?: string | null;
+  pat_configured: boolean;
+  pat_masked?: string | null;
+  pat_verified: boolean;
+  diagnostic_message?: string | null;
+}
+
+export interface VerifyParticipantGitHubResponse {
+  status: string;
+  message: string;
+  verification_status: string;
+  repository_url: string;
+  verified_at: string;
+  verified_by_user?: string | null;
+}
+
+
+
+
 
 
