@@ -548,12 +548,19 @@ export default function AdminOverviewPage() {
         </div>
 
         {/* Right side: Timestamp & Refresh */}
-        <div className="flex items-center gap-3 self-start sm:self-auto">
+        <div className="flex items-center gap-2.5 self-start sm:self-auto">
           {lastUpdated && (
-            <span className="text-xs text-[#91A4BE]">
+            <span className="text-xs text-[#91A4BE] hidden md:inline">
               Last updated {lastUpdatedString}
             </span>
           )}
+          <Link
+            href="/admin/organizations"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-[#2784FF] hover:bg-[#2784FF]/90 rounded-lg transition-colors shadow-sm"
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            <span>+ New Organization</span>
+          </Link>
           <button
             type="button"
             onClick={() => loadData(true)}
@@ -1357,8 +1364,15 @@ export default function AdminOverviewPage() {
             {loading ? (
               <PanelSkeleton rows={5} />
             ) : recentOrgs.length === 0 ? (
-              <div className="py-8 text-center text-xs text-[#91A4BE]">
-                No organizations registered yet.
+              <div className="py-8 text-center text-xs text-[#91A4BE] flex flex-col items-center justify-center gap-2">
+                <Building2 className="w-6 h-6 text-[#24364D]" />
+                <p>No organizations registered yet.</p>
+                <Link
+                  href="/admin/organizations"
+                  className="mt-1 px-3 py-1.5 rounded-lg bg-[#2784FF]/10 hover:bg-[#2784FF]/20 text-[#2784FF] border border-[#2784FF]/30 font-medium transition-colors"
+                >
+                  + Create Organization
+                </Link>
               </div>
             ) : (
               recentOrgs.slice(0, 5).map((org) => {

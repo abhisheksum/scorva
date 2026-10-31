@@ -18,6 +18,12 @@ import {
   ShieldAlert,
   ArrowRight,
   Calendar,
+  KeyRound,
+  Eye,
+  EyeOff,
+  UserCheck,
+  Sparkles,
+  Lock,
 } from 'lucide-react';
 import { PageHeader } from '@/components/admin/PageHeader';
 import { StatusBadge } from '@/components/admin/StatusBadge';
@@ -47,12 +53,24 @@ export default function AdminOrganizationsPage() {
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [isSubmittingCreate, setIsSubmittingCreate] = useState<boolean>(false);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [createForm, setCreateForm] = useState<CreateOrganizationRequest>({
     name: '',
     slug: '',
     owner_email: '',
+    owner_name: '',
+    owner_password: '',
   });
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const generateRandomPassword = () => {
+    const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
+    let res = '';
+    for (let i = 0; i < 12; i++) {
+      res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setCreateForm((prev) => ({ ...prev, owner_password: res }));
+  };
 
   const [statusModalOrg, setStatusModalOrg] = useState<OrganizationSummaryResponse | null>(null);
   const [targetStatus, setTargetStatus] = useState<OrganizationStatus>('active');
@@ -126,11 +144,13 @@ export default function AdminOrganizationsPage() {
         name: createForm.name.trim(),
         slug: createForm.slug.trim(),
         owner_email: createForm.owner_email.trim(),
+        owner_name: createForm.owner_name?.trim() || undefined,
+        owner_password: createForm.owner_password?.trim() || undefined,
       });
       setIsCreateModalOpen(false);
-      setCreateForm({ name: '', slug: '', owner_email: '' });
-      setSuccessMessage(`Organization "${createForm.name}" created successfully.`);
-      setTimeout(() => setSuccessMessage(null), 4000);
+      setCreateForm({ name: '', slug: '', owner_email: '', owner_name: '', owner_password: '' });
+      setSuccessMessage(`Organization "${createForm.name}" created successfully with organizer account.`);
+      setTimeout(() => setSuccessMessage(null), 5000);
       setPage(1);
       await loadOrganizations();
     } catch (err: unknown) {
@@ -590,23 +610,84 @@ export default function AdminOrganizationsPage() {
                 <p className="text-[10px] text-text-muted mt-1">Lowercase letters, numbers, and hyphens only.</p>
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-text-secondary mb-1">
-                  Initial Owner Email <span className="text-status-error">*</span>
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="admin@example.com"
-                  value={createForm.owner_email}
-                  onChange={(e) =>
-                    setCreateForm((prev) => ({ ...prev, owner_email: e.target.value }))
-                  }
-                  className="w-full px-3 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
-                />
-                <p className="text-[10px] text-text-muted mt-1">
-                  Must be an existing registered Scorva user account.
+              <div className="pt-2 border-t border-surface-border">
+                <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-text-primary">
+                  <UserCheck className="w-3.5 h-3.5 text-primary" />
+                  <span>Organizer Credentials (Direct Setup)</span>
+                </div>
+                <p className="text-[11px] text-text-muted mb-3">
+                  Organizers do not need to self-register. Super admin provisions their credentials directly here.
                 </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Organizer Full Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Sarah Jenkins"
+                      value={createForm.owner_name || ''}
+                      onChange={(e) =>
+                        setCreateForm((prev) => ({ ...prev, owner_name: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-text-secondary mb-1">
+                      Organizer Email <span className="text-status-error">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="organizer@organization.com"
+                      value={createForm.owner_email}
+                      onChange={(e) =>
+                        setCreateForm((prev) => ({ ...prev, owner_email: e.target.value }))
+                      }
+                      className="w-full px-3 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-medium text-text-secondary">
+                        Organizer Login Password
+                      </label>
+                      <button
+                        type="button"
+                        onClick={generateRandomPassword}
+                        className="text-[10px] text-primary hover:text-primary-hover flex items-center gap-1 font-medium transition-colors"
+                      >
+                        <Sparkles className="w-3 h-3" />
+                        <span>Generate</span>
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Leave empty to default to OrganizerPass123!"
+                        value={createForm.owner_password || ''}
+                        onChange={(e) =>
+                          setCreateForm((prev) => ({ ...prev, owner_password: e.target.value }))
+                        }
+                        className="w-full pl-3 pr-8 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary font-mono"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+                      >
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-text-muted mt-1">
+                      The organizer can use this password immediately to log into their workspace.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-surface-border">

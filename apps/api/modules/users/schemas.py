@@ -8,8 +8,10 @@ from apps.api.modules.users.models import PlatformRole
 class UserCreateRequest(BaseModel):
     email: EmailStr
     full_name: str = Field(..., min_length=2, max_length=150)
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=6, max_length=100)
     platform_role: Optional[PlatformRole] = None
+    organization_id: Optional[uuid.UUID] = None
+    org_role: Optional[str] = "organizer"
 
 
 class UserStatusUpdateRequest(BaseModel):

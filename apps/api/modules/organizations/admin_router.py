@@ -197,6 +197,8 @@ async def post_add_organization_member(
         user_agent=ua,
         correlation_id=corr_id,
         audit_action="org_member_added",
+        full_name=data.full_name,
+        password=data.password,
     )
 
 

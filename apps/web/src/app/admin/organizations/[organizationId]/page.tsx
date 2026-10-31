@@ -25,6 +25,10 @@ import {
   ExternalLink,
   Edit,
   History,
+  Eye,
+  EyeOff,
+  Sparkles,
+  KeyRound,
 } from 'lucide-react';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 import { api, ApiClientError } from '@/lib/api-client';
@@ -104,6 +108,9 @@ export default function AdminOrganizationDetailPage({
   // Add Member Modal
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState<boolean>(false);
   const [newMemberEmail, setNewMemberEmail] = useState<string>('');
+  const [newMemberFullName, setNewMemberFullName] = useState<string>('');
+  const [newMemberPassword, setNewMemberPassword] = useState<string>('');
+  const [showMemberPassword, setShowMemberPassword] = useState<boolean>(false);
   const [newMemberRole, setNewMemberRole] = useState<OrgRole>('organizer');
   const [isSubmittingMember, setIsSubmittingMember] = useState<boolean>(false);
   const [memberError, setMemberError] = useState<string | null>(null);
@@ -301,12 +308,16 @@ export default function AdminOrganizationDetailPage({
       await api.addAdminOrganizationMember(orgId, {
         email: newMemberEmail.trim(),
         role: newMemberRole,
+        full_name: newMemberFullName.trim() || undefined,
+        password: newMemberPassword.trim() || undefined,
       });
       setIsAddMemberModalOpen(false);
       setNewMemberEmail('');
+      setNewMemberFullName('');
+      setNewMemberPassword('');
       setNewMemberRole('organizer');
-      setSuccessMessage('Member added to organization successfully.');
-      setTimeout(() => setSuccessMessage(null), 3000);
+      setSuccessMessage('Member/Organizer credentials provisioned and added successfully.');
+      setTimeout(() => setSuccessMessage(null), 4000);
       const membersData = await api.getAdminOrganizationMembers(orgId);
       setMembers(membersData);
     } catch (err: unknown) {
@@ -1093,16 +1104,71 @@ export default function AdminOrganizationDetailPage({
 
               <div>
                 <label className="block text-xs font-medium text-text-secondary mb-1">
+                  Full Name (Optional for existing user)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. John Doe"
+                  value={newMemberFullName}
+                  onChange={(e) => setNewMemberFullName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">
                   User Email Address <span className="text-status-error">*</span>
                 </label>
                 <input
                   type="email"
                   required
-                  placeholder="collaborator@example.com"
+                  placeholder="organizer@example.com"
                   value={newMemberEmail}
                   onChange={(e) => setNewMemberEmail(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-text-secondary">
+                    Login Password Credentials
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%';
+                      let res = '';
+                      for (let i = 0; i < 12; i++) {
+                        res += chars.charAt(Math.floor(Math.random() * chars.length));
+                      }
+                      setNewMemberPassword(res);
+                    }}
+                    className="text-[10px] text-primary hover:text-primary-hover flex items-center gap-1 font-medium transition-colors"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>Generate</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showMemberPassword ? 'text' : 'password'}
+                    placeholder="Leave blank to default to OrganizerPass123!"
+                    value={newMemberPassword}
+                    onChange={(e) => setNewMemberPassword(e.target.value)}
+                    className="w-full pl-3 pr-8 py-2 text-xs bg-surface-elevated border border-surface-border rounded-lg text-text-primary focus:outline-none focus:border-primary font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowMemberPassword(!showMemberPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+                  >
+                    {showMemberPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[10px] text-text-muted mt-1">
+                  Organizers do not need to register. They can log in immediately with this email and password.
+                </p>
               </div>
 
               <div>

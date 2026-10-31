@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from apps.api.core.database import get_db_session
 from apps.api.core.exceptions import AppException
 from apps.api.core.redis import delete_cached_session
+from apps.api.core.security import hash_password
 from apps.api.dependencies import get_current_user, require_security_admin, require_super_admin
 from apps.api.middleware.proxy_headers import get_client_ip
 from apps.api.modules.audit.models import AuditOutcome
@@ -22,6 +23,7 @@ from apps.api.modules.rbac.service import (
 from apps.api.modules.users.models import PlatformRole, User, UserSession
 from apps.api.modules.users.schemas import (
     PaginatedUsersResponse,
+    UserCreateRequest,
     UserRoleUpdateRequest,
     UserStatusUpdateRequest,
 )
@@ -113,6 +115,112 @@ async def list_users(
         page=page,
         limit=limit,
         total_pages=total_pages,
+    )
+
+
+@router.post(
+    "",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new user or organizer with credentials (Super Admin)",
+)
+@router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+async def create_user(
+    req: UserCreateRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    admin_user: User = Depends(require_super_admin),
+) -> UserResponse:
+    """
+    Creates a new user account with credentials directly.
+    Organizers and users do not need to self-register; super admins can provision them directly.
+    Optionally assigns them to an organization.
+    """
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("User-Agent", "Unknown")
+    correlation_id = getattr(request.state, "correlation_id", uuid.uuid4())
+
+    email_clean = req.email.lower().strip()
+    stmt = select(User).where(User.email == email_clean, User.deleted_at.is_(None))
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    if existing:
+        raise AppException(
+            code="USER_EMAIL_EXISTS",
+            message=f"User with email '{email_clean}' already exists.",
+            status_code=status.HTTP_409_CONFLICT,
+            title="Email Already Registered",
+        )
+
+    hashed_pw = hash_password(req.password)
+    user_id = uuid.uuid4()
+    new_user = User(
+        id=user_id,
+        email=email_clean,
+        full_name=req.full_name.strip(),
+        hashed_password=hashed_pw,
+        platform_role=req.platform_role,
+        is_active=True,
+        is_verified=True,
+        mfa_enabled=False,
+    )
+    db.add(new_user)
+
+    if req.organization_id:
+        from apps.api.modules.organizations.models import Organization, OrganizationMembership, MembershipStatus, OrgRole
+        org_stmt = select(Organization).where(Organization.id == req.organization_id, Organization.deleted_at.is_(None))
+        org = (await db.execute(org_stmt)).scalar_one_or_none()
+        if not org:
+            raise AppException(
+                code="ORGANIZATION_NOT_FOUND",
+                message="Target organization not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                title="Organization Not Found",
+            )
+        role_enum = OrgRole.ORGANIZER
+        if req.org_role:
+            try:
+                role_enum = OrgRole(req.org_role.lower())
+            except ValueError:
+                role_enum = OrgRole.ORGANIZER
+
+        membership = OrganizationMembership(
+            id=uuid.uuid4(),
+            organization_id=org.id,
+            user_id=user_id,
+            role=role_enum,
+            status=MembershipStatus.ACTIVE,
+        )
+        db.add(membership)
+
+    role_desc = req.platform_role.value if req.platform_role else (req.org_role or "organizer")
+    await record_audit_event(
+        db=db,
+        action="user_created",
+        resource_type="user",
+        resource_id=str(user_id),
+        outcome=AuditOutcome.SUCCESS,
+        actor_user_id=admin_user.id,
+        actor_email=admin_user.email,
+        actor_role=admin_user.platform_role.value if admin_user.platform_role else "none",
+        reason=f"User {email_clean} created with role {role_desc}",
+        diff_payload={"email": email_clean, "role": role_desc},
+        ip_address=client_ip,
+        user_agent=user_agent,
+        correlation_id=correlation_id,
+    )
+
+    await db.commit()
+    await db.refresh(new_user)
+
+    return UserResponse(
+        id=str(new_user.id),
+        email=new_user.email,
+        full_name=new_user.full_name,
+        platform_role=new_user.platform_role.value if new_user.platform_role else None,
+        mfa_enabled=new_user.mfa_enabled,
+        is_active=new_user.is_active,
+        created_at=new_user.created_at,
+        last_login_at=new_user.last_login_at,
     )
 
 

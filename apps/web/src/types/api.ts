@@ -64,6 +64,14 @@ export interface UserRoutingProfile {
   accessible_destinations: AccessibleDestination[];
 }
 
+export type PlatformRole =
+  | 'platform_owner'
+  | 'platform_ops_admin'
+  | 'ai_ops_admin'
+  | 'security_admin'
+  | 'support_admin'
+  | 'billing_admin';
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -283,6 +291,8 @@ export interface CreateOrganizationRequest {
   name: string;
   slug: string;
   owner_email: string;
+  owner_name?: string;
+  owner_password?: string;
   settings?: Record<string, unknown>;
 }
 
@@ -306,7 +316,18 @@ export interface TransferOwnershipRequest {
 export interface AdminAddMemberRequest {
   user_id?: string;
   email?: string;
+  full_name?: string;
+  password?: string;
   role?: OrgRole;
+}
+
+export interface AdminCreateUserRequest {
+  full_name: string;
+  email: string;
+  password: string;
+  platform_role?: PlatformRole | null;
+  organization_id?: string;
+  org_role?: string;
 }
 
 export interface UpdateMemberRoleRequest {

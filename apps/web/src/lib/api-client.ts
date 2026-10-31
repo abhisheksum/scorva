@@ -6,6 +6,7 @@ import {
   AuthSuccessResponse,
   UserProfile,
   PaginatedUsersResponse,
+  AdminCreateUserRequest,
   DashboardOverviewResponse,
   DashboardTrendsResponse,
   AuditEventsResponse,
@@ -162,6 +163,15 @@ export async function fetchApi<T>(
         const details = (errorBody.invalid_params || errorBody.error?.details || []) as unknown[];
         const requestId = errorBody.request_id || errorBody.error?.request_id;
 
+        if (
+          response.status === 401 &&
+          (code === 'SESSION_NOT_FOUND' || code === 'SESSION_REVOKED' || code === 'SESSION_EXPIRED') &&
+          typeof window !== 'undefined' &&
+          !window.location.pathname.startsWith('/login')
+        ) {
+          window.location.href = `/login?expired=1&redirect=${encodeURIComponent(window.location.pathname)}`;
+        }
+
         throw new ApiClientError(
           message,
           response.status,
@@ -266,6 +276,12 @@ export const api = {
     return fetchApi<UserProfile>(`/api/v1/admin/users/${userId}/status`, {
       method: 'POST',
       body: JSON.stringify({ is_active: isActive, reason }),
+    });
+  },
+  createAdminUser: async (data: AdminCreateUserRequest): Promise<UserProfile> => {
+    return fetchApi<UserProfile>('/api/v1/admin/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   },
   revokeUserSessions: async (userId: string): Promise<{ message: string }> => {

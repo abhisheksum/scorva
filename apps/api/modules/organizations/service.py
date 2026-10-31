@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from apps.api.core.exceptions import AppException
+from apps.api.core.security import hash_password
 from apps.api.modules.audit.models import AuditOutcome
 from apps.api.modules.audit.service import record_audit_event
 from apps.api.modules.hackathons.models import Hackathon
@@ -200,23 +201,38 @@ async def create_organization(
     correlation_id: Optional[uuid.UUID] = None,
 ) -> OrganizationDetailResponse:
     """Creates a new organization tenant and assigns initial ORG_OWNER membership."""
-    # 1. Lookup owner user
-    owner_stmt = select(User).where(User.email == data.owner_email, User.deleted_at.is_(None))
+    # 1. Lookup owner user; if not found, automatically provision organizer credentials
+    owner_email_clean = data.owner_email.lower().strip()
+    owner_stmt = select(User).where(User.email == owner_email_clean, User.deleted_at.is_(None))
     owner = (await db.execute(owner_stmt)).scalar_one_or_none()
     if not owner:
-        raise AppException(
-            code="USER_NOT_FOUND",
-            message=f"User with email '{data.owner_email}' not found.",
-            status_code=status.HTTP_404_NOT_FOUND,
-            title="Owner Not Found",
+        owner_name = data.owner_name.strip() if data.owner_name else "Event Organizer"
+        raw_password = data.owner_password if data.owner_password else "OrganizerPass123!"
+        hashed_pw = hash_password(raw_password)
+        owner = User(
+            id=uuid.uuid4(),
+            email=owner_email_clean,
+            full_name=owner_name,
+            hashed_password=hashed_pw,
+            platform_role=None,
+            is_active=True,
+            is_verified=True,
+            mfa_enabled=False,
         )
-    if not owner.is_active:
+        db.add(owner)
+        await db.flush()
+    elif not owner.is_active:
         raise AppException(
             code="USER_INACTIVE",
             message="Target owner account is not active.",
             status_code=status.HTTP_400_BAD_REQUEST,
             title="Inactive Owner",
         )
+    elif data.owner_password:
+        owner.hashed_password = hash_password(data.owner_password)
+        if data.owner_name:
+            owner.full_name = data.owner_name.strip()
+        await db.flush()
 
     # 2. Check slug uniqueness
     slug_stmt = select(Organization.id).where(Organization.slug == data.slug)
@@ -615,13 +631,15 @@ async def add_organization_member(
     user_agent: str,
     correlation_id: Optional[uuid.UUID] = None,
     audit_action: str = "org_member_added",
+    full_name: Optional[str] = None,
+    password: Optional[str] = None,
 ) -> OrganizationMemberResponse:
-    """Adds a user to an organization's membership roster."""
+    """Adds a user to an organization's membership roster. Automatically provisions user if they do not exist."""
     # Find user
     if user_id:
         user_stmt = select(User).where(User.id == user_id, User.deleted_at.is_(None))
     elif email:
-        user_stmt = select(User).where(User.email == email, User.deleted_at.is_(None))
+        user_stmt = select(User).where(User.email == email.lower().strip(), User.deleted_at.is_(None))
     else:
         raise AppException(
             code="USER_NOT_SPECIFIED",
@@ -632,19 +650,41 @@ async def add_organization_member(
 
     target_user = (await db.execute(user_stmt)).scalar_one_or_none()
     if not target_user:
-        raise AppException(
-            code="USER_NOT_FOUND",
-            message="Target user not found.",
-            status_code=status.HTTP_404_NOT_FOUND,
-            title="User Not Found",
-        )
-    if not target_user.is_active:
+        if email:
+            # Organiser does not need to register - create account directly
+            new_name = full_name.strip() if full_name else "Event Organizer"
+            raw_password = password if password else "OrganizerPass123!"
+            target_user = User(
+                id=uuid.uuid4(),
+                email=email.lower().strip(),
+                full_name=new_name,
+                hashed_password=hash_password(raw_password),
+                platform_role=None,
+                is_active=True,
+                is_verified=True,
+                mfa_enabled=False,
+            )
+            db.add(target_user)
+            await db.flush()
+        else:
+            raise AppException(
+                code="USER_NOT_FOUND",
+                message="Target user not found.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                title="User Not Found",
+            )
+    elif not target_user.is_active:
         raise AppException(
             code="USER_INACTIVE",
             message="Target user account is not active.",
             status_code=status.HTTP_400_BAD_REQUEST,
             title="User Inactive",
         )
+    elif password:
+        target_user.hashed_password = hash_password(password)
+        if full_name:
+            target_user.full_name = full_name.strip()
+        await db.flush()
 
     # Check for existing membership
     existing_stmt = select(OrganizationMembership).where(

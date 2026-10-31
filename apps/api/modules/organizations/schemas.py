@@ -27,6 +27,8 @@ class CreateOrganizationRequest(StrictBaseModel):
         description="URL-safe unique identifier",
     )
     owner_email: EmailStr = Field(..., description="Email address of the organization owner")
+    owner_name: Optional[str] = Field(None, max_length=150, description="Organizer full name")
+    owner_password: Optional[str] = Field(None, max_length=100, description="Organizer login password")
     settings: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Organization settings JSON")
 
 
@@ -68,6 +70,8 @@ class TransferOwnershipRequest(StrictBaseModel):
 class AdminAddMemberRequest(StrictBaseModel):
     user_id: Optional[uuid.UUID] = None
     email: Optional[EmailStr] = None
+    full_name: Optional[str] = Field(None, max_length=150, description="Full name if creating new organizer")
+    password: Optional[str] = Field(None, max_length=100, description="Login password if creating new organizer")
     role: OrgRole = Field(default=OrgRole.ORGANIZER)
 
 
